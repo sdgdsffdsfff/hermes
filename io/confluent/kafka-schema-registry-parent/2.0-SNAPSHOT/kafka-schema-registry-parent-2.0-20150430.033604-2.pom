@@ -1,0 +1,126 @@
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>io.confluent</groupId>
+    <artifactId>kafka-schema-registry-parent</artifactId>
+    <packaging>pom</packaging>
+    <version>2.0-SNAPSHOT</version>
+    <name>kafka-schema-registry-parent</name>
+    <organization>
+        <name>Confluent, Inc.</name>
+        <url>http://confluent.io</url>
+    </organization>
+    <url>http://confluent.io</url>
+    <description>
+        Schema Registry provides a RESTful interface for storing and retrieving versioned Avro
+        schemas for use with Kafka.
+    </description>
+
+    <licenses>
+        <license>
+            <name>Apache License 2.0</name>
+            <url>http://www.apache.org/licenses/LICENSE-2.0.html</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <scm>
+        <connection>scm:git:git://github.com/confluentinc/schema-registry.git</connection>
+        <developerConnection>scm:git:git@github.com:confluentinc/schema-registry.git</developerConnection>
+        <url>https://github.com/confluentinc/schema-registry</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <modules>
+        <module>core</module>
+        <module>client</module>
+        <module>avro-serializer</module>
+        <module>package</module>
+    </modules>
+
+    <properties>
+        <jersey.version>2.6</jersey.version>
+        <confluent-common.version>2.0-SNAPSHOT</confluent-common.version>
+        <kafka.version>0.8.2.0-cp</kafka.version>
+        <kafka.scala.version>2.10</kafka.scala.version>
+        <log4j.version>1.7.6</log4j.version>
+        <restutils.version>2.0-SNAPSHOT</restutils.version>
+        <avro.version>1.7.7</avro.version>
+        <jackson.version>2.4.3</jackson.version>
+        <junit.version>4.11</junit.version>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <repositories>
+        <repository>
+            <id>confluent</id>
+            <name>Confluent</name>
+            <url>http://packages.confluent.io/maven/</url>
+        </repository>
+    </repositories>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.glassfish.jersey</groupId>
+                <artifactId>jersey-bom</artifactId>
+                <version>${jersey.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>2.5.1</version>
+                <inherited>true</inherited>
+                <configuration>
+                    <source>1.6</source>
+                    <target>1.6</target>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>1.2.1</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>2.18.1</version>
+                <configuration>
+                    <argLine>-Djava.awt.headless=true</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+	
+		<distributionManagement>
+        <repository>
+            <id>releases</id>
+            <url>
+                http://maven.dev.sh.ctripcorp.com:8081/nexus/content/repositories/fxrelease
+            </url>
+        </repository>
+        <snapshotRepository>
+            <id>snapshots</id>
+            <url>
+                http://maven.dev.sh.ctripcorp.com:8081/nexus/content/repositories/fxsnapshot
+            </url>
+        </snapshotRepository>
+    </distributionManagement>
+</project>
