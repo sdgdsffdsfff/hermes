@@ -1,4 +1,4 @@
-angular.module('hermes-subscription', [ 'ngResource', 'ui.bootstrap', 'xeditable' ]).run(function(editableOptions) {
+angular.module('hermes-subscription', [ 'ngResource', 'ui.bootstrap', 'xeditable' ,'smart-table']).run(function(editableOptions) {
 	editableOptions.theme = 'bs3';
 }).controller('subscription-controller', [ '$scope', '$filter', '$resource', function(scope, filter, resource) {
 	var subscription_resource = resource('/api/subscriptions/', {}, {
@@ -37,7 +37,8 @@ angular.module('hermes-subscription', [ 'ngResource', 'ui.bootstrap', 'xeditable
 	});
 
 	scope.selected = {};
-	scope.subscriber = {};
+	scope.subscribers = [];
+	scope.display_subscribers = [].concat(scope.subscribers);
 
 	scope.topic_names = subscription_resource.get_topic_names({}, function(data) {
 		scope.topic_names = data;
@@ -56,12 +57,15 @@ angular.module('hermes-subscription', [ 'ngResource', 'ui.bootstrap', 'xeditable
 			name : undefined,
 			topic : undefined,
 			group : undefined,
-			endpoints : undefined
+			endpoints : undefined,
+			id : 0,
 		};
 		scope.subscribers.push(scope.inserted);
 	};
 
-	scope.add_subscriber = function add_subscriber(subscriber) {
+	scope.add_subscriber = function add_subscriber(subscriber,id) {
+		console.log(id);
+		subscriber.id=id;
 		subscription_resource.save(subscriber, function(data) {
 			scope.subscribers = subscription_resource.get_subscribers({}, function(data) {
 				scope.subscribers = data;
@@ -114,4 +118,14 @@ angular.module('hermes-subscription', [ 'ngResource', 'ui.bootstrap', 'xeditable
 			show_op_info.show("Stop subscriber failed! " + resp.data, false);
 		});
 	};
+	
+	scope.checkName = function(data,id){
+		for(var idx =0; idx < scope.subscribers.length; idx++){
+			var subscriber =scope.subscribers[idx]; 
+			if(subscriber.id==id)
+				continue;
+			if(subscriber.name==data)
+				return "Name already exists!"
+		}
+	}
 } ]);

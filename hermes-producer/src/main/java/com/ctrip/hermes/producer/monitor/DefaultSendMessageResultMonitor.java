@@ -1,33 +1,24 @@
 package com.ctrip.hermes.producer.monitor;
 
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.concurrent.Future;
 import java.util.concurrent.locks.ReentrantLock;
 
-import org.codehaus.plexus.personality.plexus.lifecycle.phase.Initializable;
-import org.codehaus.plexus.personality.plexus.lifecycle.phase.InitializationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.unidal.lookup.annotation.Inject;
 import org.unidal.lookup.annotation.Named;
 import org.unidal.tuple.Pair;
 
 import com.ctrip.hermes.core.constants.CatConstants;
 import com.ctrip.hermes.core.message.ProducerMessage;
-import com.ctrip.hermes.core.result.SendResult;
-import com.ctrip.hermes.core.service.SystemClockService;
 import com.ctrip.hermes.core.transport.command.SendMessageCommand;
 import com.ctrip.hermes.core.transport.command.SendMessageResultCommand;
-import com.ctrip.hermes.core.utils.HermesThreadFactory;
-import com.ctrip.hermes.core.utils.PlexusComponentLocator;
-import com.ctrip.hermes.producer.config.ProducerConfig;
-import com.ctrip.hermes.producer.sender.MessageSender;
+import com.ctrip.hermes.producer.status.ProducerStatusMonitor;
 import com.dianping.cat.Cat;
 import com.dianping.cat.message.Transaction;
+import com.dianping.cat.message.internal.DefaultTransaction;
 import com.dianping.cat.message.spi.MessageTree;
 import com.google.common.util.concurrent.SettableFuture;
 
@@ -36,43 +27,49 @@ import com.google.common.util.concurrent.SettableFuture;
  *
  */
 @Named(type = SendMessageResultMonitor.class)
-public class DefaultSendMessageResultMonitor implements SendMessageResultMonitor, Initializable {
+public class DefaultSendMessageResultMonitor implements SendMessageResultMonitor {
 	private static final Logger log = LoggerFactory.getLogger(DefaultSendMessageResultMonitor.class);
 
-	@Inject
-	private ProducerConfig m_config;
-
-	@Inject
-	private SystemClockService m_systemClockService;
-
-	private Map<Long, SendMessageCommand> m_cmds = new ConcurrentHashMap<Long, SendMessageCommand>();
+	private Map<Long, Pair<SendMessageCommand, SettableFuture<Boolean>>> m_cmds = new ConcurrentHashMap<>();
 
 	private ReentrantLock m_lock = new ReentrantLock();
 
 	@Override
-	public void monitor(SendMessageCommand cmd) {
-		if (cmd != null) {
-			m_lock.lock();
-			try {
-				m_cmds.put(cmd.getHeader().getCorrelationId(), cmd);
-			} finally {
-				m_lock.unlock();
-			}
+	public Future<Boolean> monitor(SendMessageCommand cmd) {
+		m_lock.lock();
+		try {
+			SettableFuture<Boolean> future = SettableFuture.create();
+			m_cmds.put(cmd.getHeader().getCorrelationId(), new Pair<SendMessageCommand, SettableFuture<Boolean>>(cmd,
+			      future));
+			return future;
+		} finally {
+			m_lock.unlock();
 		}
 	}
 
 	@Override
 	public void resultReceived(SendMessageResultCommand result) {
 		if (result != null) {
-			SendMessageCommand sendMessageCommand = null;
+			Pair<SendMessageCommand, SettableFuture<Boolean>> pair = null;
 			m_lock.lock();
 			try {
-				sendMessageCommand = m_cmds.remove(result.getHeader().getCorrelationId());
+				pair = m_cmds.remove(result.getHeader().getCorrelationId());
 			} finally {
 				m_lock.unlock();
 			}
-			if (sendMessageCommand != null) {
+			if (pair != null) {
 				try {
+					SendMessageCommand sendMessageCommand = pair.getKey();
+					SettableFuture<Boolean> future = pair.getValue();
+
+					ProducerStatusMonitor.INSTANCE.brokerResultReceived(sendMessageCommand.getTopic(),
+					      sendMessageCommand.getPartition(), sendMessageCommand.getMessageCount());
+
+					if (isResultSuccess(result)) {
+						future.set(true);
+					} else {
+						future.set(false);
+					}
 					sendMessageCommand.onResultReceived(result);
 					tracking(sendMessageCommand, true);
 				} catch (Exception e) {
@@ -83,7 +80,20 @@ public class DefaultSendMessageResultMonitor implements SendMessageResultMonitor
 		}
 	}
 
+	private boolean isResultSuccess(SendMessageResultCommand result) {
+		Map<Integer, Boolean> successes = result.getSuccesses();
+		for (Boolean success : successes.values()) {
+			if (!success) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	private void tracking(SendMessageCommand sendMessageCommand, boolean success) {
+		String status = success ? Transaction.SUCCESS : "Timeout";
+
 		for (List<ProducerMessage<?>> msgs : sendMessageCommand.getProducerMessages()) {
 			for (ProducerMessage<?> msg : msgs) {
 				Transaction t = Cat.newTransaction("Message.Produce.Acked", msg.getTopic());
@@ -97,69 +107,28 @@ public class DefaultSendMessageResultMonitor implements SendMessageResultMonitor
 				tree.setParentMessageId(parentMsgId);
 				tree.setRootMessageId(rootMsgId);
 
-				t.setStatus(success ? Transaction.SUCCESS : "Timeout");
+				Transaction elapseT = Cat.newTransaction("Message.Produce.Elapse", msg.getTopic());
+				if (elapseT instanceof DefaultTransaction) {
+					((DefaultTransaction) elapseT).setDurationStart(msg.getBornTimeNano());
+					elapseT.addData("command.message.count", sendMessageCommand.getMessageCount());
+				}
+				elapseT.setStatus(status);
+				elapseT.complete();
+
+				t.setStatus(status);
 				t.complete();
 			}
 		}
 	}
 
 	@Override
-	public void initialize() throws InitializationException {
-		Executors.newSingleThreadScheduledExecutor(
-		      HermesThreadFactory.create("SendMessageResultMonitor-HouseKeeper", true)).scheduleWithFixedDelay(
-		      new Runnable() {
-
-			      @Override
-			      public void run() {
-				      try {
-					      scanAndResendTimeoutCommands();
-				      } catch (Exception e) {
-					      // ignore
-					      if (log.isDebugEnabled()) {
-						      log.debug("Exception occurred while running SendMessageResultMonitor-HouseKeeper", e);
-					      }
-				      }
-			      }
-
-		      }, 5, 5, TimeUnit.SECONDS);
-	}
-
-	protected void scanAndResendTimeoutCommands() {
-		List<SendMessageCommand> timeoutCmds = scanTimeoutCommands();
-
-		if (!timeoutCmds.isEmpty()) {
-			resend(timeoutCmds);
-		}
-	}
-
-	protected List<SendMessageCommand> scanTimeoutCommands() {
-		List<SendMessageCommand> timeoutCmds = new LinkedList<SendMessageCommand>();
+	public void cancel(SendMessageCommand cmd) {
 		m_lock.lock();
 		try {
-			for (Map.Entry<Long, SendMessageCommand> entry : m_cmds.entrySet()) {
-				SendMessageCommand cmd = entry.getValue();
-				Long correlationId = entry.getKey();
-				if (cmd.isExpired(m_systemClockService.now(), m_config.getSendMessageReadResultTimeoutMillis())) {
-					timeoutCmds.add(m_cmds.remove(correlationId));
-				}
-			}
-
+			m_cmds.remove(cmd.getHeader().getCorrelationId());
 		} finally {
 			m_lock.unlock();
 		}
-		return timeoutCmds;
 	}
 
-	protected void resend(List<SendMessageCommand> timeoutCmds) {
-		for (SendMessageCommand cmd : timeoutCmds) {
-			List<Pair<ProducerMessage<?>, SettableFuture<SendResult>>> msgFuturePairs = cmd
-			      .getProducerMessageFuturePairs();
-			for (Pair<ProducerMessage<?>, SettableFuture<SendResult>> pair : msgFuturePairs) {
-				MessageSender messageSender = PlexusComponentLocator.lookup(MessageSender.class);
-				if (messageSender != null) {
-					messageSender.resend(pair.getKey(), pair.getValue());
-				}
-			}
-		}
-	}
 }

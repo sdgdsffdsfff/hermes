@@ -96,11 +96,11 @@ public class LeaseResource {
 		      "/consumer/acquire", params, tpg);
 
 		if (leaseAcquireResponse == null) {
-			ConsumerLeaseAllocator leaseAllocator = m_consumerLeaseAllocatorLocator.findStrategy(tpg.getTopic(),
+			ConsumerLeaseAllocator leaseAllocator = m_consumerLeaseAllocatorLocator.findAllocator(tpg.getTopic(),
 			      tpg.getGroupId());
 			try {
 				if (leaseAllocator != null) {
-					return leaseAllocator.tryAcquireLease(tpg, sessionId, getRemoteAddr(host, req), req.getRemotePort());
+					return leaseAllocator.tryAcquireLease(tpg, sessionId, getRemoteAddr(host, req));
 				} else {
 					return new LeaseAcquireResponse(false, null, m_systemClockService.now() + NO_STRATEGY_DELAY_TIME_MILLIS);
 				}
@@ -131,12 +131,11 @@ public class LeaseResource {
 		      "/consumer/renew", params, tpg);
 
 		if (leaseAcquireResponse == null) {
-			ConsumerLeaseAllocator leaseAllocator = m_consumerLeaseAllocatorLocator.findStrategy(tpg.getTopic(),
+			ConsumerLeaseAllocator leaseAllocator = m_consumerLeaseAllocatorLocator.findAllocator(tpg.getTopic(),
 			      tpg.getGroupId());
 			try {
 				if (leaseAllocator != null) {
-					return leaseAllocator.tryRenewLease(tpg, sessionId, leaseId, getRemoteAddr(host, req),
-					      req.getRemotePort());
+					return leaseAllocator.tryRenewLease(tpg, sessionId, leaseId, getRemoteAddr(host, req));
 				} else {
 					return new LeaseAcquireResponse(false, null, m_systemClockService.now() + NO_STRATEGY_DELAY_TIME_MILLIS);
 				}
@@ -157,7 +156,7 @@ public class LeaseResource {
 	      @QueryParam("partition") int partition,//
 	      @QueryParam("sessionId") String sessionId,//
 	      @QueryParam("brokerPort") int port, //
-	      @QueryParam("host") @DefaultValue("-") String host,//
+	      @QueryParam("host") @DefaultValue("-") String host,// FIXME use empty string as default value
 	      @Context HttpServletRequest req) {
 
 		Map<String, String> params = new HashMap<>();

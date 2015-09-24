@@ -39,16 +39,12 @@ public class MetaServerConfig {
 		return getConsumerLeaseTimeMillis() + 3000L;
 	}
 
-	public long getBrokerHeartbeatTimeoutMillis() {
-		return getBrokerLeaseTimeMillis() + 5000L;
-	}
-
 	public long getActiveBrokerCheckIntervalTimeMillis() {
 		return 1000L;
 	}
 
 	public long getBrokerLeaseTimeMillis() {
-		return 30 * 1000L;
+		return 10 * 1000L;
 	}
 
 	public long getBrokerLeaseClientSideAdjustmentTimeMills() {

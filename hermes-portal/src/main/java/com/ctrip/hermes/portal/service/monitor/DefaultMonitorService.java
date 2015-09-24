@@ -28,6 +28,7 @@ import org.unidal.tuple.Pair;
 
 import com.alibaba.fastjson.JSON;
 import com.ctrip.hermes.core.env.ClientEnvironment;
+import com.ctrip.hermes.core.message.payload.JsonPayloadCodec;
 import com.ctrip.hermes.core.utils.HermesThreadFactory;
 import com.ctrip.hermes.meta.entity.ConsumerGroup;
 import com.ctrip.hermes.meta.entity.Endpoint;
@@ -38,9 +39,12 @@ import com.ctrip.hermes.meta.entity.Topic;
 import com.ctrip.hermes.metaservice.service.PortalMetaService;
 import com.ctrip.hermes.portal.config.PortalConstants;
 import com.ctrip.hermes.portal.dal.HermesPortalDao;
+import com.ctrip.hermes.portal.dal.MessagePriority;
+import com.ctrip.hermes.portal.dal.OffsetMessage;
 import com.ctrip.hermes.portal.resource.view.BrokerQPSBriefView;
 import com.ctrip.hermes.portal.resource.view.BrokerQPSDetailView;
 import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView;
+import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView.DelayDetail;
 import com.ctrip.hermes.portal.service.elastic.ElasticClient;
 
 @Named(type = MonitorService.class)
@@ -66,8 +70,7 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 
 	private List<TopicDelayDetailView> m_topDelays = new ArrayList<TopicDelayDetailView>();
 
-	// key: topic & groupId, value.key: partitionId, value.value: latest produced date & latest consumed date
-	private Map<Pair<String, Integer>, Map<Integer, Pair<Date, Date>>> m_delays = new HashMap<>();
+	private Map<String, TopicDelayDetailView> m_delays = new HashMap<>();
 
 	// key: topic, value: latest produced date
 	private Map<String, Date> m_latestProduced = new HashMap<>();
@@ -117,8 +120,8 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 
 	private Meta loadMeta() {
 		try {
-			String url = String.format("http://%s:%s/%s", m_env.getMetaServerDomainName(), m_env.getGlobalConfig()
-			      .getProperty("meta.port", "1248").trim(), "/meta");
+			String url = String.format("http://%s:%s/%s", m_env.getMetaServerDomainName(),
+					m_env.getGlobalConfig().getProperty("meta.port", "80").trim(), "meta");
 			HttpResponse response = Request.Get(url).execute().returnResponse();
 			int statusCode = response.getStatusLine().getStatusCode();
 			if (statusCode == HttpStatus.SC_OK) {
@@ -152,69 +155,74 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 	}
 
 	@Override
-	public Pair<Date, Date> getDelay(String topic, int groupId) {
-		Map<Integer, Pair<Date, Date>> delayDetail = getDelayDetails(topic, groupId);
-		if (delayDetail != null) {
-			Date latestProduced = new Date(0);
-			Date latestConsumed = new Date(0);
-			for (Entry<Integer, Pair<Date, Date>> entry : delayDetail.entrySet()) {
-				if (entry.getValue().getKey().after(latestProduced)) {
-					latestProduced = entry.getValue().getKey();
-				}
-				if (entry.getValue().getValue().after(latestConsumed)) {
-					latestConsumed = entry.getValue().getValue();
-				}
-			}
-			return new Pair<Date, Date>(latestProduced, latestConsumed);
+	public Long getDelay(String topic) {
+		long delay = 0;
+		TopicDelayDetailView view = m_delays.get(topic);
+		if (view == null) {
+			log.warn("Delay information of {} not found.", topic);
+		} else {
+			delay = view.getTotalDelay();
 		}
-		log.warn("Delay information of {}:{} not found.", topic, groupId);
-		return null;
+		return delay;
 	}
 
-	// Map<Partition-ID, Pair<Latest-produced, Latest-consumed>>
 	@Override
-	public Map<Integer, Pair<Date, Date>> getDelayDetails(String topic, int groupId) {
-		Map<Integer, Pair<Date, Date>> m = m_delays.get(new Pair<String, Integer>(topic, groupId));
-		return m == null ? new HashMap<Integer, Pair<Date, Date>>() : m;
-	}
-
-	private void updateDelayDetails() {
-		Map<Pair<String, Integer>, Map<Integer, Pair<Date, Date>>> m = new HashMap<>();
-		for (Entry<String, Topic> entry : m_metaService.getTopics().entrySet()) {
-			Topic t = entry.getValue();
-			if (t.getStorageType().equals(Storage.MYSQL)) {
-				for (Partition p : t.getPartitions()) {
-					for (ConsumerGroup c : t.getConsumerGroups()) {
-						Pair<Date, Date> delay = null;
-						try {
-							delay = m_dao.getDelayTime(t.getName(), p.getId(), c.getId());
-						} catch (DalException e) {
-							log.warn("Get delay of {}:{}:{} failed.", t.getName(), p.getId(), PortalConstants.PRIORITY_TRUE, e);
-							continue;
-						}
-						Pair<String, Integer> k = new Pair<String, Integer>(t.getName(), c.getId());
-						if (!m.containsKey(k)) {
-							m.put(k, new HashMap<Integer, Pair<Date, Date>>());
-						}
-						m.get(k).put(p.getId(), delay);
-					}
+	public Long getDelay(String topic, String groupName) {
+		long delay = 0;
+		TopicDelayDetailView view = m_delays.get(topic);
+		if (view == null) {
+			log.warn("Delay information of {} not found.", topic);
+		} else {
+			List<DelayDetail> details = view.getDetails().get(groupName);
+			if (details == null) {
+				log.warn("Delay information of {}:{} not found.", topic, groupName);
+			} else {
+				for (DelayDetail detail : details) {
+					delay += detail.getDelay();
 				}
 			}
 		}
-		m_delays = m;
+		return delay;
+	}
+
+	@Override
+	public TopicDelayDetailView getTopicDelayDetail(String topic) {
+		return m_delays.get(topic);
+	}
+
+	@Override
+	public List<DelayDetail> getDelayDetailForConsumer(String topic, String consumer) {
+		List<DelayDetail> details = null;
+		TopicDelayDetailView view = m_delays.get(topic);
+		if (view == null) {
+			log.warn("Delay information of {} not found.", topic);
+		} else {
+			details = view.getDetails().get(consumer);
+			if (details == null) {
+				log.warn("Delay information of {}:{} not found.", topic, consumer);
+			}
+		}
+		return details;
 	}
 
 	private void updateLatestProduced() {
 		Map<String, Date> m = new HashMap<String, Date>();
 		for (Entry<String, Topic> entry : m_metaService.getTopics().entrySet()) {
 			Topic topic = entry.getValue();
-			if (topic.getStorageType().equals(Storage.MYSQL)) {
+			if (Storage.MYSQL.equals(topic.getStorageType())) {
 				String topicName = topic.getName();
 				Date current = m_latestProduced.get(topicName) == null ? new Date(0) : m_latestProduced.get(topicName);
-				Date latest = new Date(current.getTime());
+				Date latest = new Date(0);
 				for (Partition partition : m_metaService.findPartitionsByTopic(topicName)) {
 					try {
-						latest = m_dao.getLatestProduced(topicName, partition.getId());
+						MessagePriority msgPriority = m_dao.getLatestProduced(topicName, partition.getId(),
+								PortalConstants.PRIORITY_TRUE);
+						Date datePriority = msgPriority == null ? latest : msgPriority.getCreationDate();
+						MessagePriority msgNonPriority = m_dao.getLatestProduced(topicName, partition.getId(),
+								PortalConstants.PRIORITY_FALSE);
+
+						Date dateNonPriority = msgNonPriority == null ? latest : msgNonPriority.getCreationDate();
+						latest = datePriority.after(dateNonPriority) ? datePriority : dateNonPriority;
 					} catch (DalException e) {
 						log.warn("Find latest produced failed. {}:{}", topicName, partition.getId());
 						continue;
@@ -285,45 +293,67 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 	}
 
 	private void updateTopDelays() {
-		Map<Integer, String> m = getConsumerNameMap();
 		Map<String, TopicDelayDetailView> delayMap = new HashMap<String, TopicDelayDetailView>();
+		for (Entry<String, Topic> entry : m_metaService.getTopics().entrySet()) {
+			Topic t = entry.getValue();
+			if (Storage.MYSQL.equals(t.getStorageType())) {
+				TopicDelayDetailView topicDelayView = new TopicDelayDetailView(t.getName());
+				delayMap.put(t.getName(), topicDelayView);
+				for (Partition p : t.getPartitions()) {
+					try {
+						MessagePriority msgPriority = m_dao.getLatestProduced(t.getName(), p.getId(),
+								PortalConstants.PRIORITY_TRUE);
+						MessagePriority msgNonPriority = m_dao.getLatestProduced(t.getName(), p.getId(),
+								PortalConstants.PRIORITY_FALSE);
+						long priorityMsgId = msgPriority == null ? 0 : msgPriority.getId();
+						long nonPriorityMsgId = msgNonPriority == null ? 0 : msgNonPriority.getId();
+						Map<Integer, Pair<OffsetMessage, OffsetMessage>> offsetMsgMap = m_dao
+								.getLatestConsumed(t.getName(), p.getId());
+						for (ConsumerGroup c : t.getConsumerGroups()) {
+							Pair<OffsetMessage, OffsetMessage> offsets = offsetMsgMap.get(c.getId());
+							long priorityMsgOffset = offsets == null ? 0 : offsets.getKey().getOffset();
+							long nonPriorityMsgOffset = offsets == null ? 0 : offsets.getValue().getOffset();
+							long delay = (priorityMsgId + nonPriorityMsgId)
+									- (priorityMsgOffset + nonPriorityMsgOffset);
+							MessagePriority lastConsumedPriorityMsg = m_dao.getMsgById(t.getName(), p.getId(),
+									PortalConstants.PRIORITY_TRUE, priorityMsgOffset);
+							MessagePriority lastConsumedNonPriorityMsg = m_dao.getMsgById(t.getName(), p.getId(),
+									PortalConstants.PRIORITY_TRUE, nonPriorityMsgOffset);
 
-		for (Entry<Pair<String, Integer>, Map<Integer, Pair<Date, Date>>> entry : m_delays.entrySet()) {
-			String topic = entry.getKey().getKey();
-			String consumer = m.get(entry.getKey().getValue());
-			TopicDelayDetailView view = delayMap.get(topic);
-			if (view == null) {
-				delayMap.put(topic, view = new TopicDelayDetailView(topic));
+							DelayDetail delayDetail = new DelayDetail(c.getName(), p.getId());
+							delayDetail.setDelay(delay);
+							delayDetail.setPriorityMsgId(priorityMsgId);
+							delayDetail.setNonPriorityMsgId(nonPriorityMsgId);
+							delayDetail.setPriorityMsgOffset(priorityMsgOffset);
+							delayDetail.setNonPriorityMsgOffset(nonPriorityMsgOffset);
+							delayDetail.setLastConsumedPriorityMsg(lastConsumedPriorityMsg == null ? null
+									: JSON.toJSONString(new JsonPayloadCodec()
+											.decode(lastConsumedPriorityMsg.getPayload(), Object.class)));
+							delayDetail.setLastConsumedNonPriorityMsg(lastConsumedNonPriorityMsg == null ? null
+									: JSON.toJSONString(new JsonPayloadCodec()
+											.decode(lastConsumedNonPriorityMsg.getPayload(), Object.class)));
+							topicDelayView.addDelay(delayDetail);
+
+							topicDelayView.setTotalDelay(topicDelayView.getTotalDelay() + delay);
+						}
+					} catch (DalException e) {
+						log.warn("Get delay of {}:{} failed.", t.getName(), p.getId(), e);
+						continue;
+					}
+				}
 			}
-			int sum = 0;
-			for (Entry<Integer, Pair<Date, Date>> pEntry : entry.getValue().entrySet()) {
-				int partitionId = pEntry.getKey();
-				int delayInSeconds = (int) ((pEntry.getValue().getKey().getTime() - pEntry.getValue().getValue().getTime()) / 1000L);
-				view.addDelay(consumer, partitionId, delayInSeconds);
-				sum += delayInSeconds;
-			}
-			view.setAverageDelay(view.getDetails().size() > 0 ? sum / view.getDetails().size() : 0);
 		}
 
+		m_delays = delayMap;
 		List<TopicDelayDetailView> list = new ArrayList<TopicDelayDetailView>(delayMap.values());
 		Collections.sort(list, new Comparator<TopicDelayDetailView>() {
 			@Override
 			public int compare(TopicDelayDetailView o1, TopicDelayDetailView o2) {
-				return o2.getAverageDelay() - o1.getAverageDelay();
+				return o2.getTotalDelay() == o1.getTotalDelay() ? 0 : o2.getTotalDelay() > o1.getTotalDelay() ? 1 : -1;
 			}
 		});
 
 		m_topDelays = list;
-	}
-
-	private Map<Integer, String> getConsumerNameMap() {
-		Map<Integer, String> map = new HashMap<Integer, String>();
-		for (Entry<String, Topic> entry : m_metaService.getTopics().entrySet()) {
-			for (ConsumerGroup consumerGroup : entry.getValue().getConsumerGroups()) {
-				map.put(consumerGroup.getId(), consumerGroup.getName());
-			}
-		}
-		return map;
 	}
 
 	private void updateLatestClients() {
@@ -337,33 +367,33 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 		updateLatestBroker();
 
 		Executors.newSingleThreadScheduledExecutor(HermesThreadFactory.create("MONITOR_MYSQL_UPDATE_TASK", true))
-		      .scheduleWithFixedDelay(new Runnable() {
-			      @Override
-			      public void run() {
-				      try {
-					      updateDelayDetails();
-					      updateTopDelays();
-					      updateLatestProduced();
-					      updateLatestBroker();
-				      } catch (Throwable e) {
-					      log.error("Update mysql monitor information failed.", e);
-				      }
-			      }
-		      }, 0, 1, TimeUnit.MINUTES);
+				.scheduleWithFixedDelay(new Runnable() {
+					@Override
+					public void run() {
+						try {
+							// updateDelayDetails();
+							updateTopDelays();
+							updateLatestProduced();
+							updateLatestBroker();
+						} catch (Throwable e) {
+							log.error("Update mysql monitor information failed.", e);
+						}
+					}
+				}, 0, 1, TimeUnit.MINUTES);
 
 		Executors.newSingleThreadScheduledExecutor(HermesThreadFactory.create("MONITOR_ELASTIC_UPDATE_TASK", true))
-		      .scheduleWithFixedDelay(new Runnable() {
-			      @Override
-			      public void run() {
-				      try {
-					      updateProducerTopicRelationship();
-					      updateConsumerTopicRelationship();
-					      updateLatestClients();
-				      } catch (Throwable e) {
-					      log.error("Update elastic monitor information failed.", e);
-				      }
-			      }
-		      }, 0, 30, TimeUnit.MINUTES);
+				.scheduleWithFixedDelay(new Runnable() {
+					@Override
+					public void run() {
+						try {
+							updateProducerTopicRelationship();
+							updateConsumerTopicRelationship();
+							updateLatestClients();
+						} catch (Throwable e) {
+							log.error("Update elastic monitor information failed.", e);
+						}
+					}
+				}, 0, 30, TimeUnit.MINUTES);
 	}
 
 	@Override
@@ -380,16 +410,28 @@ public class DefaultMonitorService implements MonitorService, Initializable {
 
 	@Override
 	public List<TopicDelayDetailView> getTopDelays(int top) {
-		top = top > m_topDelays.size() ? m_topDelays.size() : top;
+		top = top > m_delays.size() ? m_delays.size() : top;
 		return m_topDelays.subList(0, top > 0 ? top : 0);
 	}
 
 	@Override
-	public List<Entry<String, Date>> getTopOutdateTopic(int top) {
-		List<Entry<String, Date>> list = new ArrayList<Entry<String, Date>>(m_latestProduced.entrySet());
-		Collections.sort(list, new Comparator<Entry<String, Date>>() {
+	public List<Pair<String, Date>> getTopOutdateTopic(int top) {
+		List<Pair<String, Date>> list = new ArrayList<Pair<String, Date>>();
+
+		for (Entry<String, Date> entry : m_latestProduced.entrySet()) {
+			list.add(new Pair<String, Date>(entry.getKey(), entry.getValue()));
+		}
+
+		Collections.sort(list, new Comparator<Pair<String, Date>>() {
 			@Override
-			public int compare(Entry<String, Date> o1, Entry<String, Date> o2) {
+			public int compare(Pair<String, Date> o1, Pair<String, Date> o2) {
+				long t1 = o1.getValue().getTime();
+				long t2 = o2.getValue().getTime();
+				if (t1 == 0 && t2 == 0) {
+					return o1.getKey().compareTo(o2.getKey());
+				} else if (t1 == 0 || t2 == 0) {
+					return t1 == 0 ? 1 : -1;
+				}
 				return o1.getValue().compareTo(o2.getValue());
 			}
 		});

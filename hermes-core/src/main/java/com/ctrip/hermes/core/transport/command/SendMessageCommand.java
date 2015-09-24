@@ -45,16 +45,12 @@ public class SendMessageCommand extends AbstractCommand {
 
 	private transient Map<Integer, SettableFuture<SendResult>> m_futures = new HashMap<Integer, SettableFuture<SendResult>>();
 
-	private transient boolean m_accepted = false;
-
-	private transient long m_acceptedTime = -1L;
-
 	public SendMessageCommand() {
-		super(CommandType.MESSAGE_SEND);
+		this(null, -1);
 	}
 
 	public SendMessageCommand(String topic, int partition) {
-		super(CommandType.MESSAGE_SEND);
+		super(CommandType.MESSAGE_SEND, 1);
 		m_topic = topic;
 		m_partition = partition;
 	}
@@ -106,6 +102,7 @@ public class SendMessageCommand extends AbstractCommand {
 
 	public void onResultReceived(SendMessageResultCommand result) {
 		for (Map.Entry<Integer, SettableFuture<SendResult>> entry : m_futures.entrySet()) {
+			// FIXME add more details into result or exception, no matter success or not(offset, id, etc.)
 			if (result.isSuccess(entry.getKey())) {
 				entry.getValue().set(new SendResult());
 			} else {
@@ -254,15 +251,6 @@ public class SendMessageCommand extends AbstractCommand {
 
 			return m_msgs;
 		}
-	}
-
-	public synchronized void accepted(long acceptedTime) {
-		m_acceptedTime = acceptedTime;
-		m_accepted = true;
-	}
-
-	public synchronized boolean isExpired(long now, long timeoutMillis) {
-		return m_accepted && (now - m_acceptedTime > timeoutMillis);
 	}
 
 	public Collection<List<ProducerMessage<?>>> getProducerMessages() {

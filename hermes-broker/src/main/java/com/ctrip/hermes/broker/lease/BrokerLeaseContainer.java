@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.unidal.lookup.annotation.Inject;
 import org.unidal.lookup.annotation.Named;
-import org.unidal.tuple.Pair;
 
 import com.ctrip.hermes.broker.build.BuildConstants;
 import com.ctrip.hermes.broker.config.BrokerConfig;
@@ -46,7 +45,7 @@ public class BrokerLeaseContainer implements Initializable {
 
 	private Map<BrokerLeaseKey, Lease> m_existingLeases = new ConcurrentHashMap<>();
 
-	private Map<Pair<String, Integer>, Long> m_nextAcquireTimes = new ConcurrentHashMap<>();
+	private Map<BrokerLeaseKey, Long> m_nextAcquireTimes = new ConcurrentHashMap<>();
 
 	private ConcurrentMap<BrokerLeaseKey, AtomicBoolean> m_leaseAcquireTaskRunnings = new ConcurrentHashMap<>();
 
@@ -91,21 +90,19 @@ public class BrokerLeaseContainer implements Initializable {
 			return;
 		}
 
-		Pair<String, Integer> tp = new Pair<String, Integer>(key.getTopic(), key.getPartition());
-
-		if (m_nextAcquireTimes.containsKey(tp) && m_nextAcquireTimes.get(tp) > m_systemClockService.now()) {
+		if (m_nextAcquireTimes.containsKey(key) && m_nextAcquireTimes.get(key) > m_systemClockService.now()) {
 			return;
 		}
 
 		LeaseAcquireResponse response = m_leaseManager.tryAcquireLease(key);
 
-		if (response != null && response.isAcquired() && !response.getLease().isExpired()) {
+		if (response != null && response.isAcquired()) {
 			Lease lease = response.getLease();
 			if (!lease.isExpired()) {
 				m_existingLeases.put(key, lease);
 
-				long renewDelay = lease.getRemainingTime() - m_config.getLeaseRenewTimeMillsBeforeExpire();
-				m_nextAcquireTimes.remove(tp);
+				long renewDelay = calRenewDelay(lease);
+				m_nextAcquireTimes.remove(key);
 				scheduleRenewLeaseTask(key, renewDelay);
 				log.info("Lease acquired(topic={}, partition={}, sessionId={}, leaseId={}, expireTime={})", key.getTopic(),
 				      key.getPartition(), key.getSessionId(), lease.getId(), new Date(lease.getExpireTime()));
@@ -114,12 +111,16 @@ public class BrokerLeaseContainer implements Initializable {
 			long nextTryTime = response != null && response.getNextTryTime() > 0 ? response.getNextTryTime() : m_config
 			      .getDefaultLeaseAcquireDelayMillis() + m_systemClockService.now();
 
-			m_nextAcquireTimes.put(tp, nextTryTime);
+			m_nextAcquireTimes.put(key, nextTryTime);
 			if (log.isDebugEnabled()) {
 				log.debug("Unable to acquire lease(topic={}, partition={}, sessionId={}), next retry time will be {}.",
 				      key.getTopic(), key.getPartition(), key.getSessionId(), new Date(nextTryTime));
 			}
 		}
+	}
+
+	private long calRenewDelay(Lease lease) {
+		return lease.getRemainingTime() - m_config.getLeaseRenewTimeMillsBeforeExpire();
 	}
 
 	private void scheduleRenewLeaseTask(final BrokerLeaseKey key, long delay) {
@@ -135,8 +136,11 @@ public class BrokerLeaseContainer implements Initializable {
 				if (existingLease != null && !existingLease.isExpired()) {
 					LeaseAcquireResponse response = m_leaseManager.tryRenewLease(key, existingLease);
 
+					long renewDelay = 0;
 					if (response != null && response.isAcquired()) {
-						existingLease.setExpireTime(response.getLease().getExpireTime());
+						Lease lease = response.getLease();
+						existingLease.setExpireTime(lease.getExpireTime());
+						renewDelay = calRenewDelay(lease);
 						if (log.isDebugEnabled()) {
 							log.debug(
 							      "Successfully renew lease(topic={}, partition={}, sessionId={}, leaseId={}, expireTime={})",
@@ -144,17 +148,17 @@ public class BrokerLeaseContainer implements Initializable {
 							            existingLease.getExpireTime()));
 						}
 					} else {
-						long delay = m_config.getDefaultLeaseRenewDelayMillis();
+						renewDelay = m_config.getDefaultLeaseRenewDelayMillis();
 						if (response != null && response.getNextTryTime() > 0) {
-							delay = response.getNextTryTime() - m_systemClockService.now();
+							renewDelay = response.getNextTryTime() - m_systemClockService.now();
 						}
-						scheduleRenewLeaseTask(key, delay);
 						if (log.isDebugEnabled()) {
 							log.debug(
 							      "Unable to renew lease((topic={}, partition={}, sessionId={}, leaseId={}), next retry will delay {} milliseconds.",
-							      key.getTopic(), key.getPartition(), key.getSessionId(), existingLease.getId(), delay);
+							      key.getTopic(), key.getPartition(), key.getSessionId(), existingLease.getId(), renewDelay);
 						}
 					}
+					scheduleRenewLeaseTask(key, renewDelay);
 				} else {
 					if (existingLease != null) {
 						log.info("Lease expired(topic={}, parition={}, sessionId={}, leaseId={}).", key.getTopic(),

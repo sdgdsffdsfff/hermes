@@ -61,7 +61,7 @@ public class ConsumerService {
 		m_metaService.updateMeta(meta);
 	}
 
-	public synchronized ConsumerGroup addConsumerForTopic(String topic, ConsumerGroup consumer) throws Exception {
+	public synchronized ConsumerGroup addConsumerForTopics(String topicName, ConsumerGroup consumer) throws Exception {
 		Meta meta = m_metaService.getMeta();
 
 		int maxConsumerId = 0;
@@ -72,10 +72,10 @@ public class ConsumerService {
 				}
 			}
 		}
-		consumer.setId(maxConsumerId + 1);
-		Topic t = meta.getTopics().get(topic);
-		t.addConsumerGroup(consumer);
 
+		consumer.setId(maxConsumerId + 1);
+		Topic t = meta.getTopics().get(topicName);
+		t.addConsumerGroup(consumer);
 		if (Storage.MYSQL.equals(t.getStorageType())) {
 			m_storageService.addConsumerStorage(t, consumer);
 			m_zookeeperService.ensureConsumerLeaseZkPath(t);
@@ -86,5 +86,22 @@ public class ConsumerService {
 		}
 
 		return consumer;
+	}
+
+	public synchronized ConsumerGroup updateGroupForTopic(String topicName, ConsumerGroup c)
+			throws Exception {
+		Meta meta = m_metaService.getMeta();
+		Topic t = meta.getTopics().get(topicName);
+		ConsumerGroup originConsumer = t.findConsumerGroup(c.getName());
+		c.setId(originConsumer.getId());
+		t.removeConsumerGroup(c.getName());
+		t.addConsumerGroup(c);
+		if (Storage.MYSQL.equals(t.getStorageType())) {
+			m_zookeeperService.ensureConsumerLeaseZkPath(t);
+		}
+		if (!m_metaService.updateMeta(meta)) {
+			throw new RuntimeException("Update meta failed, please try later");
+		}
+		return c;
 	}
 }

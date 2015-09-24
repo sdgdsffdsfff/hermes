@@ -13,8 +13,9 @@ import com.ctrip.hermes.core.meta.MetaService;
 public class DefaultMessageQueueCursor extends AbstractMessageQueueCursor {
 	private MessageQueueStorage m_storage;
 
-	public DefaultMessageQueueCursor(Tpg tpg, Lease lease, MessageQueueStorage storage, MetaService metaService) {
-		super(tpg, lease, metaService);
+	public DefaultMessageQueueCursor(Tpg tpg, Lease lease, MessageQueueStorage storage, MetaService metaService,
+	      MessageQueue messageQueue) {
+		super(tpg, lease, metaService, messageQueue);
 		m_storage = storage;
 	}
 
@@ -52,7 +53,7 @@ public class DefaultMessageQueueCursor extends AbstractMessageQueueCursor {
 	}
 
 	@Override
-	protected FetchResult fetchPriortyMessages(int batchSize) {
+	protected FetchResult fetchPriorityMessages(int batchSize) {
 		if (!m_stopped.get()) {
 			return m_storage.fetchMessages(m_priorityTpp, m_priorityOffset, batchSize);
 		} else {
@@ -61,7 +62,7 @@ public class DefaultMessageQueueCursor extends AbstractMessageQueueCursor {
 	}
 
 	@Override
-	protected FetchResult fetchNonPriortyMessages(int batchSize) {
+	protected FetchResult fetchNonPriorityMessages(int batchSize) {
 		if (!m_stopped.get()) {
 			return m_storage.fetchMessages(m_nonPriorityTpp, m_nonPriorityOffset, batchSize);
 		} else {

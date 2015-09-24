@@ -62,6 +62,31 @@ public class DefaultMetaServiceTest extends ComponentTestCase {
 	}
 
 	@Test
+	public void testGetAckTimeoutSecondsByTopicAndConsumerGroup() throws Exception {
+		assertEquals(10, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group1"));
+		assertEquals(6, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group2"));
+		assertEquals(5, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group3"));
+
+		try {
+			m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("topic_not_found", "group3");
+			fail();
+		} catch (RuntimeException e) {
+			// do nothing
+		} catch (Exception e) {
+			fail();
+		}
+
+		try {
+			m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group_not_found");
+			fail();
+		} catch (RuntimeException e) {
+			// do nothing
+		} catch (Exception e) {
+			fail();
+		}
+	}
+
+	@Test
 	public void testFindEndpointTypeByTopic() throws Exception {
 		assertEquals(Endpoint.KAFKA, m_metaService.findEndpointTypeByTopic("test_kafka"));
 		assertEquals(Endpoint.BROKER, m_metaService.findEndpointTypeByTopic("test_broker"));
@@ -138,53 +163,28 @@ public class DefaultMetaServiceTest extends ComponentTestCase {
 	}
 
 	@Test
-	public void testListTopicsByPattern() throws Exception {
-		List<Topic> topics = m_metaService.listTopicsByPattern("test_broker");
-		assertEquals(1, topics.size());
-		assertEquals("test_broker", topics.get(0).getName());
+	public void testListTopicsByPattern() {
+		DefaultMetaService ms = new DefaultMetaService();
+		assertTrue(ms.isTopicMatch("a", "a"));
+		assertTrue(ms.isTopicMatch("a.b", "a.b"));
+		assertTrue(ms.isTopicMatch("a.b.c", "a.b.c"));
 
-		topics = m_metaService.listTopicsByPattern("test_*");
-		assertEquals(2, topics.size());
-		assertEquals("test_broker", topics.get(0).getName());
-		assertEquals("test_kafka", topics.get(1).getName());
+		assertTrue(ms.isTopicMatch("a.*", "a.bbb"));
+		assertFalse(ms.isTopicMatch("a.*", "a"));
+		assertFalse(ms.isTopicMatch("a.*", "a.b.c"));
 
-		topics = m_metaService.listTopicsByPattern("    test_*   ");
-		assertEquals(2, topics.size());
-		assertEquals("test_broker", topics.get(0).getName());
-		assertEquals("test_kafka", topics.get(1).getName());
+		assertTrue(ms.isTopicMatch("a.#", "a.b"));
+		assertFalse(ms.isTopicMatch("a.#", "a"));
+		assertTrue(ms.isTopicMatch("a.#", "a.bbb"));
+		assertTrue(ms.isTopicMatch("a.#", "a.bbb.ccc"));
 
-		topics = m_metaService.listTopicsByPattern("tes*_");
-		assertEquals(0, topics.size());
+		assertTrue(ms.isTopicMatch("a.*.c", "a.bbb.c"));
+		assertFalse(ms.isTopicMatch("a.*.c", "a.bbb.xxx.c"));
 
-		topics = m_metaService.listTopicsByPattern("*test_");
-		assertEquals(0, topics.size());
-
-		try {
-			topics = m_metaService.listTopicsByPattern("           ");
-			fail();
-		} catch (RuntimeException e) {
-			// do nothing
-		} catch (Exception e) {
-			fail();
-		}
-
-		try {
-			topics = m_metaService.listTopicsByPattern("");
-			fail();
-		} catch (RuntimeException e) {
-			// do nothing
-		} catch (Exception e) {
-			fail();
-		}
-
-		try {
-			topics = m_metaService.listTopicsByPattern(null);
-			fail();
-		} catch (RuntimeException e) {
-			// do nothing
-		} catch (Exception e) {
-			fail();
-		}
+		assertTrue(ms.isTopicMatch("a.#.c", "a.bbb.c"));
+		assertTrue(ms.isTopicMatch("a.#.c", "a.bbb.xxx.c"));
+		assertFalse(ms.isTopicMatch("a.#.c", "a.bbb.d"));
+		assertFalse(ms.isTopicMatch("a.#.c", "a.bbb.xxx.d"));
 	}
 
 	@Test
@@ -226,31 +226,6 @@ public class DefaultMetaServiceTest extends ComponentTestCase {
 		assertEquals(2, datasources.size());
 		assertEquals("ds0", datasources.get(0).getId());
 		assertEquals("ds1", datasources.get(1).getId());
-	}
-
-	@Test
-	public void testGetAckTimeoutSecondsByTopicAndConsumerGroup() throws Exception {
-		assertEquals(10, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group1"));
-		assertEquals(6, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group2"));
-		assertEquals(5, m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group3"));
-
-		try {
-			m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("topic_not_found", "group3");
-			fail();
-		} catch (RuntimeException e) {
-			// do nothing
-		} catch (Exception e) {
-			fail();
-		}
-
-		try {
-			m_metaService.getAckTimeoutSecondsByTopicAndConsumerGroup("test_broker", "group_not_found");
-			fail();
-		} catch (RuntimeException e) {
-			// do nothing
-		} catch (Exception e) {
-			fail();
-		}
 	}
 
 	@Test
@@ -335,7 +310,7 @@ public class DefaultMetaServiceTest extends ComponentTestCase {
 
 	@Test
 	public void testFindAvroSchemaRegistryUrl() throws Exception {
-		assertEquals("http://10.3.8.63:8081", m_metaService.findAvroSchemaRegistryUrl());
+		assertEquals("http://10.3.8.63:8081", m_metaService.getAvroSchemaRegistryUrl());
 	}
 
 	private Meta loadLocalMeta() throws Exception {

@@ -3,6 +3,11 @@
 		<component>
 			<role>com.ctrip.hermes.broker.config.BrokerConfig</role>
 			<implementation>com.ctrip.hermes.broker.config.BrokerConfig</implementation>
+			<requirements>
+				<requirement>
+					<role>com.ctrip.hermes.core.env.ClientEnvironment</role>
+				</requirement>
+			</requirements>
 		</component>
 		<component>
 			<role>com.ctrip.hermes.broker.bootstrap.BrokerBootstrap</role>
@@ -39,9 +44,6 @@
 			<role>com.ctrip.hermes.broker.shutdown.ShutdownRequestMonitor</role>
 			<implementation>com.ctrip.hermes.broker.shutdown.ShutdownRequestMonitor</implementation>
 			<requirements>
-				<requirement>
-					<role>com.ctrip.hermes.broker.ack.AckManager</role>
-				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.core.transport.command.processor.CommandProcessorManager</role>
 				</requirement>
@@ -106,10 +108,29 @@
 			<implementation>com.ctrip.hermes.broker.transport.command.processor.AckMessageCommandProcessor</implementation>
 			<requirements>
 				<requirement>
-					<role>com.ctrip.hermes.broker.ack.AckManager</role>
+					<role>com.ctrip.hermes.broker.queue.MessageQueueManager</role>
 				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.core.log.BizLogger</role>
+				</requirement>
+			</requirements>
+		</component>
+		<component>
+			<role>com.ctrip.hermes.core.transport.command.processor.CommandProcessor</role>
+			<role-hint>QUERY_OFFSET</role-hint>
+			<implementation>com.ctrip.hermes.broker.transport.command.processor.QueryOffsetCommandProcessor</implementation>
+			<requirements>
+				<requirement>
+					<role>com.ctrip.hermes.broker.lease.BrokerLeaseContainer</role>
+				</requirement>
+				<requirement>
+					<role>com.ctrip.hermes.broker.config.BrokerConfig</role>
+				</requirement>
+				<requirement>
+					<role>com.ctrip.hermes.core.meta.MetaService</role>
+				</requirement>
+				<requirement>
+					<role>com.ctrip.hermes.broker.queue.MessageQueueManager</role>
 				</requirement>
 			</requirements>
 		</component>
@@ -122,9 +143,6 @@
 				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.broker.queue.MessageQueueManager</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.broker.ack.AckManager</role>
 				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.broker.config.BrokerConfig</role>
@@ -182,18 +200,6 @@
 				<requirement>
 					<role>com.ctrip.hermes.broker.queue.MessageQueuePartitionFactory</role>
 				</requirement>
-			</requirements>
-		</component>
-		<component>
-			<role>com.ctrip.hermes.broker.ack.AckManager</role>
-			<implementation>com.ctrip.hermes.broker.ack.DefaultAckManager</implementation>
-			<requirements>
-				<requirement>
-					<role>com.ctrip.hermes.broker.queue.MessageQueueManager</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.meta.MetaService</role>
-				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.broker.config.BrokerConfig</role>
 				</requirement>
@@ -234,6 +240,9 @@
 				<requirement>
 					<role>com.ctrip.hermes.core.service.SystemClockService</role>
 				</requirement>
+				<requirement>
+					<role>com.ctrip.hermes.broker.config.BrokerConfig</role>
+				</requirement>
 			</requirements>
 		</component>
 		<component>
@@ -242,10 +251,10 @@
 			<implementation>com.ctrip.hermes.broker.queue.storage.kafka.KafkaMessageQueueStorage</implementation>
 			<requirements>
 				<requirement>
-					<role>com.ctrip.hermes.core.log.BizLogger</role>
+					<role>com.ctrip.hermes.core.meta.MetaService</role>
 				</requirement>
 				<requirement>
-					<role>com.ctrip.hermes.core.meta.MetaService</role>
+					<role>com.ctrip.hermes.core.message.codec.MessageCodec</role>
 				</requirement>
 			</requirements>
 		</component>

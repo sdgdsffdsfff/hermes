@@ -40,7 +40,7 @@
 			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.BrokerConsumerBootstrap</implementation>
 			<requirements>
 				<requirement>
-					<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.BrokerConsumptionStrategyRegistry</role>
+					<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.ConsumingStrategyRegistry</role>
 				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.core.transport.endpoint.EndpointClient</role>
@@ -57,41 +57,26 @@
 			</requirements>
 		</component>
 		<component>
-			<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.BrokerConsumptionStrategyRegistry</role>
-			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.strategy.DefaultBrokerConsumptionRegistry</implementation>
+			<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.ConsumingStrategyRegistry</role>
+			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.strategy.DefaultConsumingRegistry</implementation>
 		</component>
 		<component>
-			<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.BrokerConsumptionStrategy</role>
-			<role-hint>LONG_POLLING</role-hint>
-			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.strategy.BrokerLongPollingConsumptionStrategy</implementation>
+			<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.ConsumingStrategy</role>
+			<role-hint>DEFAULT</role-hint>
+			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.strategy.DefaultConsumingStrategy</implementation>
 			<requirements>
-				<requirement>
-					<role>com.ctrip.hermes.consumer.engine.notifier.ConsumerNotifier</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.transport.endpoint.EndpointManager</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.transport.endpoint.EndpointClient</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.lease.LeaseManager</role>
-					<role-hint>consumer</role-hint>
-				</requirement>
 				<requirement>
 					<role>com.ctrip.hermes.consumer.engine.config.ConsumerConfig</role>
 				</requirement>
+			</requirements>
+		</component>
+		<component>
+			<role>com.ctrip.hermes.consumer.engine.bootstrap.strategy.ConsumingStrategy</role>
+			<role-hint>STRICTLY_ORDERING</role-hint>
+			<implementation>com.ctrip.hermes.consumer.engine.bootstrap.strategy.StrictlyOrderedConsumingStrategy</implementation>
+			<requirements>
 				<requirement>
-					<role>com.ctrip.hermes.core.service.SystemClockService</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.message.codec.MessageCodec</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.core.env.ClientEnvironment</role>
-				</requirement>
-				<requirement>
-					<role>com.ctrip.hermes.consumer.engine.monitor.PullMessageResultMonitor</role>
+					<role>com.ctrip.hermes.consumer.engine.config.ConsumerConfig</role>
 				</requirement>
 			</requirements>
 		</component>
@@ -107,7 +92,7 @@
 		</component>
 		<component>
 			<role>com.ctrip.hermes.core.transport.command.processor.CommandProcessor</role>
-			<role-hint>RESULT_MESSAGE_PULL</role-hint>
+			<role-hint>RESULT_MESSAGE_PULL_V2</role-hint>
 			<implementation>com.ctrip.hermes.consumer.engine.transport.command.processor.PullMessageResultCommandProcessor</implementation>
 			<requirements>
 				<requirement>
@@ -116,13 +101,22 @@
 			</requirements>
 		</component>
 		<component>
-			<role>com.ctrip.hermes.consumer.engine.monitor.PullMessageResultMonitor</role>
-			<implementation>com.ctrip.hermes.consumer.engine.monitor.DefaultPullMessageResultMonitor</implementation>
+			<role>com.ctrip.hermes.core.transport.command.processor.CommandProcessor</role>
+			<role-hint>RESULT_QUERY_OFFSET</role-hint>
+			<implementation>com.ctrip.hermes.consumer.engine.transport.command.processor.QueryOffsetResultCommandProcessor</implementation>
 			<requirements>
 				<requirement>
-					<role>com.ctrip.hermes.core.service.SystemClockService</role>
+					<role>com.ctrip.hermes.consumer.engine.monitor.QueryOffsetResultMonitor</role>
 				</requirement>
 			</requirements>
+		</component>
+		<component>
+			<role>com.ctrip.hermes.consumer.engine.monitor.PullMessageResultMonitor</role>
+			<implementation>com.ctrip.hermes.consumer.engine.monitor.DefaultPullMessageResultMonitor</implementation>
+		</component>
+		<component>
+			<role>com.ctrip.hermes.consumer.engine.monitor.QueryOffsetResultMonitor</role>
+			<implementation>com.ctrip.hermes.consumer.engine.monitor.DefaultQueryOffsetResultMonitor</implementation>
 		</component>
 		<component>
 			<role>com.ctrip.hermes.consumer.engine.notifier.ConsumerNotifier</role>
@@ -154,6 +148,11 @@
 			<implementation>com.ctrip.hermes.consumer.engine.consumer.pipeline.internal.ConsumerTracingValve</implementation>
 		</component>
 		<component>
+			<role>com.ctrip.hermes.core.pipeline.spi.Valve</role>
+			<role-hint>consumer-audit</role-hint>
+			<implementation>com.ctrip.hermes.consumer.engine.consumer.pipeline.internal.ConsumerAuditValve</implementation>
+		</component>
+		<component>
 			<role>com.ctrip.hermes.core.pipeline.Pipeline</role>
 			<role-hint>consumer</role-hint>
 			<implementation>com.ctrip.hermes.consumer.engine.pipeline.ConsumerPipeline</implementation>
@@ -181,6 +180,11 @@
 		<component>
 			<role>com.ctrip.hermes.consumer.engine.config.ConsumerConfig</role>
 			<implementation>com.ctrip.hermes.consumer.engine.config.ConsumerConfig</implementation>
+			<requirements>
+				<requirement>
+					<role>com.ctrip.hermes.core.env.ClientEnvironment</role>
+				</requirement>
+			</requirements>
 		</component>
 	</components>
 </plexus>

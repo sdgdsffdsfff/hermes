@@ -212,10 +212,13 @@ public class DefaultPortalMetaService extends DefaultMetaService implements Port
 				Meta latestMeta = findLatestMeta();
 				if (m_meta == null || latestMeta.getVersion() > m_meta.getVersion()) {
 					m_meta = latestMeta;
+					m_zookeeperService.updateZkBaseMetaVersion(m_meta.getVersion());
 				}
 			}
 		} catch (DalException e) {
 			m_logger.warn("Update meta from db failed.", e);
+		} catch (Exception e) {
+			m_logger.warn("Update meta from db failed, maybe update base meta version in zk failed.", e);
 		}
 	}
 
@@ -259,4 +262,39 @@ public class DefaultPortalMetaService extends DefaultMetaService implements Port
 		}
 		return new ArrayList<ConsumerGroup>();
 	}
+
+	@Override
+	public String getZookeeperList() {
+		Map<String, Storage> storages = m_meta.getStorages();
+		for (Storage storage : storages.values()) {
+			if ("kafka".equals(storage.getType())) {
+				for (Datasource ds : storage.getDatasources()) {
+					for (Property property : ds.getProperties().values()) {
+						if ("zookeeper.connect".equals(property.getName())) {
+							return property.getValue();
+						}
+					}
+				}
+			}
+		}
+		return "";
+	}
+
+	@Override
+	public String getKafkaBrokerList() {
+		Map<String, Storage> storages = m_meta.getStorages();
+		for (Storage storage : storages.values()) {
+			if ("kafka".equals(storage.getType())) {
+				for (Datasource ds : storage.getDatasources()) {
+					for (Property property : ds.getProperties().values()) {
+						if ("bootstrap.servers".equals(property.getName())) {
+							return property.getValue();
+						}
+					}
+				}
+			}
+		}
+		return "";
+	}
+
 }

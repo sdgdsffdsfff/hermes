@@ -3,7 +3,6 @@ package com.ctrip.hermes.portal.service.monitor;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Set;
 
 import org.unidal.tuple.Pair;
@@ -11,18 +10,23 @@ import org.unidal.tuple.Pair;
 import com.ctrip.hermes.portal.resource.view.BrokerQPSBriefView;
 import com.ctrip.hermes.portal.resource.view.BrokerQPSDetailView;
 import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView;
+import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView.DelayDetail;
 
 public interface MonitorService {
 
 	public Date getLatestProduced(String topic);
 
-	public Pair<Date, Date> getDelay(String topic, int groupId);
+	public Long getDelay(String topic, String groupId);
 
-	public Map<Integer, Pair<Date, Date>> getDelayDetails(String topic, int groupId);
+	public Long getDelay(String topic);
 
 	public List<TopicDelayDetailView> getTopDelays(int top);
 
-	public List<Entry<String, Date>> getTopOutdateTopic(int top);
+	public TopicDelayDetailView getTopicDelayDetail(String topic);
+	
+	public List<DelayDetail> getDelayDetailForConsumer(String tipic, String consumer);
+
+	public List<Pair<String, Date>> getTopOutdateTopic(int top);
 
 	public Map<String, Set<String>> getTopic2ProducerIPs();
 
@@ -43,4 +47,5 @@ public interface MonitorService {
 	public BrokerQPSDetailView getBrokerReceivedDetailQPS(String brokerIp);
 
 	public BrokerQPSDetailView getBrokerDeliveredDetailQPS(String brokerIp);
+
 }

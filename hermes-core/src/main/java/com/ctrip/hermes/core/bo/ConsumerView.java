@@ -1,11 +1,11 @@
 package com.ctrip.hermes.core.bo;
 
-import org.unidal.tuple.Pair;
-
 import com.ctrip.hermes.meta.entity.ConsumerGroup;
 
 public class ConsumerView {
-	private String topic;
+	private String topicName;
+
+	
 
 	private String groupName;
 
@@ -20,8 +20,8 @@ public class ConsumerView {
 	public ConsumerView() {
 	}
 
-	public ConsumerView(String topic, ConsumerGroup consumer) {
-		this.topic = topic;
+	public ConsumerView(String topicName, ConsumerGroup consumer) {
+		this.topicName = topicName;
 		this.groupName = consumer.getName();
 		this.appId = consumer.getAppIds();
 		this.retryPolicy = consumer.getRetryPolicy();
@@ -29,7 +29,7 @@ public class ConsumerView {
 		this.orderedConsume = consumer.getOrderedConsume();
 	}
 
-	public Pair<String, ConsumerGroup> toMetaConsumer() {
+	public  ConsumerGroup toMetaConsumer() {
 		ConsumerGroup consumer = new ConsumerGroup();
 		consumer.setAckTimeoutSeconds(this.ackTimeoutSeconds);
 		consumer.setAppIds(this.appId);
@@ -37,15 +37,16 @@ public class ConsumerView {
 		consumer.setRetryPolicy(this.retryPolicy);
 		consumer.setOrderedConsume(this.orderedConsume);
 
-		return new Pair<String, ConsumerGroup>(this.topic, consumer);
+		return consumer;
 	}
 
-	public String getTopic() {
-		return topic;
+
+	public String getTopicName() {
+		return topicName;
 	}
 
-	public void setTopic(String topic) {
-		this.topic = topic;
+	public void setTopicName(String topicName) {
+		this.topicName = topicName;
 	}
 
 	public String getGroupName() {
@@ -79,7 +80,7 @@ public class ConsumerView {
 	public void setAckTimeoutSeconds(Integer ackTimeoutSeconds) {
 		this.ackTimeoutSeconds = ackTimeoutSeconds;
 	}
-	
+
 	public boolean isOrderedConsume() {
 		return orderedConsume;
 	}
@@ -90,7 +91,8 @@ public class ConsumerView {
 
 	@Override
 	public String toString() {
-		return "ConsumerView [topic=" + topic + ", groupName=" + groupName + ", appId=" + appId + ", retryPolicy="
-		      + retryPolicy + ", ackTimeoutSeconds=" + ackTimeoutSeconds + ", orderedConsume=" + orderedConsume + "]";
+		return "ConsumerView [topicName=" + topicName + ", groupName=" + groupName + ", appId=" + appId
+				+ ", retryPolicy=" + retryPolicy + ", ackTimeoutSeconds=" + ackTimeoutSeconds + ", orderedConsume="
+				+ orderedConsume + "]";
 	}
 }

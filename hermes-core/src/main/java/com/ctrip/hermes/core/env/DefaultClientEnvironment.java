@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -113,6 +114,13 @@ public class DefaultClientEnvironment extends ContainerHolder implements ClientE
 			props.load(in);
 		}
 
+		StringBuilder sb = new StringBuilder();
+		for (Enumeration<String> e = (Enumeration<String>) props.propertyNames(); e.hasMoreElements();) {
+			String key = e.nextElement();
+			String val = (String) props.getProperty(key);
+			sb.append(key).append('=').append(val).append('\n');
+		}
+		logger.info("Reading properties: \n" + sb.toString());
 		return props;
 	}
 
@@ -127,8 +135,9 @@ public class DefaultClientEnvironment extends ContainerHolder implements ClientE
 		}
 
 		m_env2MetaDomain.put(Env.LOCAL, m_globalDefault.getProperty("local.domain", "meta.hermes.local"));
+		// TODO use real dev&lpt domain when get dev&lpt domain
 		m_env2MetaDomain.put(Env.DEV, m_globalDefault.getProperty("dev.domain", "10.3.8.63"));
-		m_env2MetaDomain.put(Env.LPT, m_globalDefault.getProperty("lpt.domain", "10.3.8.63"));
+		m_env2MetaDomain.put(Env.LPT, m_globalDefault.getProperty("lpt.domain", "10.2.5.133"));
 		m_env2MetaDomain.put(Env.FAT, m_globalDefault.getProperty("fat.domain", "meta.hermes.fws.qa.nt.ctripcorp.com"));
 		m_env2MetaDomain.put(Env.FWS, m_globalDefault.getProperty("fws.domain", "meta.hermes.fws.qa.nt.ctripcorp.com"));
 		m_env2MetaDomain

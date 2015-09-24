@@ -1,18 +1,22 @@
 package com.ctrip.hermes.core.meta.remote;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.http.client.fluent.Request;
 import org.codehaus.plexus.personality.plexus.lifecycle.phase.Initializable;
 import org.codehaus.plexus.personality.plexus.lifecycle.phase.InitializationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.unidal.helper.Files.IO;
+import org.unidal.helper.Urls;
 import org.unidal.lookup.annotation.Inject;
 import org.unidal.lookup.annotation.Named;
 
@@ -22,6 +26,7 @@ import com.ctrip.hermes.core.env.ClientEnvironment;
 import com.ctrip.hermes.core.utils.CollectionUtil;
 import com.ctrip.hermes.core.utils.DNSUtil;
 import com.ctrip.hermes.core.utils.HermesThreadFactory;
+import com.google.common.base.Charsets;
 
 @Named(type = MetaServerLocator.class)
 public class DefaultMetaServerLocator implements MetaServerLocator, Initializable {
@@ -36,7 +41,7 @@ public class DefaultMetaServerLocator implements MetaServerLocator, Initializabl
 	@Inject
 	private CoreConfig m_coreConfig;
 
-	private AtomicReference<List<String>> m_metaServerList = new AtomicReference<List<String>>(new LinkedList<String>());
+	private AtomicReference<List<String>> m_metaServerList = new AtomicReference<List<String>>(new ArrayList<String>());
 
 	private int m_masterMetaServerPort = DEFAULT_MASTER_METASERVER_PORT;
 
@@ -46,18 +51,45 @@ public class DefaultMetaServerLocator implements MetaServerLocator, Initializabl
 	}
 
 	private void updateMetaServerList() {
-		if (CollectionUtil.isNullOrEmpty(m_metaServerList.get())) {
-			m_metaServerList.set(domainToIpPorts());
+		int maxTries = 10;
+		RuntimeException exception = null;
+
+		for (int i = 0; i < maxTries; i++) {
+			try {
+				if (CollectionUtil.isNullOrEmpty(m_metaServerList.get())) {
+					m_metaServerList.set(domainToIpPorts());
+				}
+
+				List<String> metaServerList = fetchMetaServerListFromExistingMetaServer();
+				if (metaServerList != null && !metaServerList.isEmpty()) {
+					m_metaServerList.set(metaServerList);
+					return;
+				}
+
+			} catch (RuntimeException e) {
+				exception = e;
+			}
+
+			try {
+				TimeUnit.SECONDS.sleep(1);
+			} catch (InterruptedException e) {
+				// ignore it
+			}
 		}
 
-		m_metaServerList.set(fetchMetaServerListFromExistingMetaServer());
+		if (exception != null) {
+			log.warn("Failed to fetch meta server list for {} times", maxTries);
+			throw exception;
+		}
 	}
 
 	private List<String> fetchMetaServerListFromExistingMetaServer() {
-		List<String> metaServerList = m_metaServerList.get();
+		List<String> metaServerList = new ArrayList<String>(m_metaServerList.get());
 		if (log.isDebugEnabled()) {
 			log.debug("Start fetching meta server ip from meta servers {}", metaServerList);
 		}
+
+		Collections.shuffle(metaServerList);
 
 		for (String ipPort : metaServerList) {
 			try {
@@ -97,13 +129,26 @@ public class DefaultMetaServerLocator implements MetaServerLocator, Initializabl
 
 	private List<String> doFetch(String ipPort) throws IOException {
 		String url = String.format("http://%s%s", ipPort, "/metaserver/servers");
-		String response = Request.Get(url)//
-		      .connectTimeout(m_coreConfig.getMetaServerConnectTimeout())//
-		      .socketTimeout(m_coreConfig.getMetaServerReadTimeout())//
-		      .execute()//
-		      .returnContent().asString();
 
-		return Arrays.asList(JSON.parseArray(response).toArray(new String[0]));
+		InputStream is = null;
+
+		try {
+			is = Urls.forIO()//
+			      .connectTimeout(m_coreConfig.getMetaServerConnectTimeout())//
+			      .readTimeout(m_coreConfig.getMetaServerReadTimeout())//
+			      .openStream(url);
+
+			String response = IO.INSTANCE.readFrom(is, Charsets.UTF_8.name());
+			return Arrays.asList(JSON.parseArray(response).toArray(new String[0]));
+		} finally {
+			if (is != null) {
+				try {
+					is.close();
+				} catch (Exception e) {
+					// ignore it
+				}
+			}
+		}
 	}
 
 	@Override

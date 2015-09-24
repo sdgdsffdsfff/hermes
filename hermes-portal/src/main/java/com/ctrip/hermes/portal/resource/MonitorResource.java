@@ -1,11 +1,8 @@
 package com.ctrip.hermes.portal.resource;
 
-import io.netty.buffer.Unpooled;
-
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,8 +32,8 @@ import com.ctrip.hermes.core.utils.CollectionUtil.Transformer;
 import com.ctrip.hermes.core.utils.HermesPrimitiveCodec;
 import com.ctrip.hermes.core.utils.PlexusComponentLocator;
 import com.ctrip.hermes.meta.entity.Codec;
-import com.ctrip.hermes.meta.entity.ConsumerGroup;
 import com.ctrip.hermes.meta.entity.Partition;
+import com.ctrip.hermes.meta.entity.Storage;
 import com.ctrip.hermes.meta.entity.Topic;
 import com.ctrip.hermes.metaservice.service.PortalMetaService;
 import com.ctrip.hermes.portal.assist.ListUtils;
@@ -46,7 +43,10 @@ import com.ctrip.hermes.portal.resource.assists.RestException;
 import com.ctrip.hermes.portal.resource.view.MonitorClientView;
 import com.ctrip.hermes.portal.resource.view.TopicDelayBriefView;
 import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView;
+import com.ctrip.hermes.portal.resource.view.TopicDelayDetailView.DelayDetail;
 import com.ctrip.hermes.portal.service.monitor.MonitorService;
+
+import io.netty.buffer.Unpooled;
 
 @Path("/monitor/")
 @Singleton
@@ -66,13 +66,8 @@ public class MonitorResource {
 		List<TopicDelayBriefView> list = new ArrayList<TopicDelayBriefView>();
 		for (Entry<String, Topic> entry : m_metaService.getTopics().entrySet()) {
 			Topic t = entry.getValue();
-			int avgDelay = 0;
-			for (ConsumerGroup consumer : t.getConsumerGroups()) {
-				Pair<Date, Date> delay = m_monitorService.getDelay(t.getName(), consumer.getId());
-				avgDelay += delay.getKey().getTime() - delay.getValue().getTime();
-			}
-			avgDelay /= t.getConsumerGroups().size() == 0 ? 1 : t.getConsumerGroups().size();
-			list.add(new TopicDelayBriefView(t.getName(), m_monitorService.getLatestProduced(t.getName()), avgDelay));
+			long delay = m_monitorService.getDelay(t.getName());
+			list.add(new TopicDelayBriefView(t.getName(), m_monitorService.getLatestProduced(t.getName()), delay));
 		}
 
 		Collections.sort(list, new Comparator<TopicDelayBriefView>() {
@@ -97,11 +92,9 @@ public class MonitorResource {
 	public Response getTopicDelay(@PathParam("topic") String name) {
 		Topic topic = m_metaService.findTopicByName(name);
 		TopicDelayDetailView view = new TopicDelayDetailView(name);
-		for (ConsumerGroup consumer : topic.getConsumerGroups()) {
-			for (Entry<Integer, Pair<Date, Date>> e : m_monitorService.getDelayDetails(name, consumer.getId()).entrySet()) {
-				int delay = (int) (e.getValue().getKey().getTime() - e.getValue().getValue().getTime());
-				view.addDelay(consumer.getName(), e.getKey(), delay);
-			}
+
+		if (Storage.MYSQL.equals(topic.getStorageType())) {
+			view = m_monitorService.getTopicDelayDetail(name);
 		}
 
 		return Response.status(Status.OK).entity(view).build();
@@ -115,17 +108,20 @@ public class MonitorResource {
 			throw new RestException(String.format("Topic %s is not found", name), Status.NOT_FOUND);
 		}
 
-		@SuppressWarnings("unchecked")
-		List<MessagePriority>[] ls = new List[topic.getPartitions().size()];
-		for (int i = 0; i < topic.getPartitions().size(); i++) {
-			Partition partition = topic.getPartitions().get(i);
-			try {
-				ls[i] = m_portalDao.getLatestMessages(topic.getName(), partition.getId(), 20);
-			} catch (DalException e) {
-				log.warn("Find latest messages of {}[{}] failed", topic.getName(), partition.getId(), e);
+		List<MessagePriority> list = new ArrayList<MessagePriority>();
+		if (Storage.MYSQL.equals(topic.getStorageType())) {
+			@SuppressWarnings("unchecked")
+			List<MessagePriority>[] ls = new List[topic.getPartitions().size()];
+			for (int i = 0; i < topic.getPartitions().size(); i++) {
+				Partition partition = topic.getPartitions().get(i);
+				try {
+					ls[i] = m_portalDao.getLatestMessages(topic.getName(), partition.getId(), 20);
+				} catch (DalException e) {
+					log.warn("Find latest messages of {}[{}] failed", topic.getName(), partition.getId(), e);
+				}
 			}
+			list = ListUtils.getTopK(15, MessagePriority.DATE_COMPARATOR_DESC, ls);
 		}
-		List<MessagePriority> list = ListUtils.getTopK(15, MessagePriority.DATE_COMPARATOR_DESC, ls);
 
 		return Response.status(Status.OK).entity(CollectionUtil.collect(list, new Transformer() {
 			@Override
@@ -244,21 +240,23 @@ public class MonitorResource {
 	}
 
 	@GET
-	@Path("delay/{topic}/{groupId}")
-	public Response getConsumeDelay(@PathParam("topic") String topic, @PathParam("groupId") int groupId) {
-		Pair<Date, Date> delay = m_monitorService.getDelay(topic, groupId);
+	@Path("delay/{topic}/{groupName}")
+	// not in use
+	public Response getConsumeDelay(@PathParam("topic") String topic, @PathParam("groupName") String groupName) {
+		Long delay = m_monitorService.getDelay(topic, groupName);
 		if (delay == null) {
-			throw new RestException(String.format("Delay [%s, %s] not found.", topic, groupId), Status.NOT_FOUND);
+			throw new RestException(String.format("Delay [%s, %s] not found.", topic, groupName), Status.NOT_FOUND);
 		}
 		return Response.status(Status.OK).entity(delay).build();
 	}
 
 	@GET
-	@Path("delay/{topic}/{groupId}/detail")
-	public Response getConsumeDelayDetail(@PathParam("topic") String topic, @PathParam("groupId") int groupId) {
-		Map<Integer, Pair<Date, Date>> delayDetails = m_monitorService.getDelayDetails(topic, groupId);
+	@Path("delay/{topic}/{groupName}/detail")
+	// not in use
+	public Response getConsumeDelayDetail(@PathParam("topic") String topic, @PathParam("groupName") String groupName) {
+		List<DelayDetail> delayDetails = m_monitorService.getDelayDetailForConsumer(topic, groupName);
 		if (delayDetails == null || delayDetails.size() == 0) {
-			throw new RestException(String.format("Delay [%s, %s] not found.", topic, groupId), Status.NOT_FOUND);
+			throw new RestException(String.format("Delay [%s, %s] not found.", topic, groupName), Status.NOT_FOUND);
 		}
 		return Response.status(Status.OK).entity(delayDetails).build();
 	}

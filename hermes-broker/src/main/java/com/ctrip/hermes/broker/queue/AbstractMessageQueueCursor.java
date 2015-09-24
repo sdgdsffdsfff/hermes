@@ -1,5 +1,6 @@
 package com.ctrip.hermes.broker.queue;
 
+import java.util.Date;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -7,8 +8,10 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.unidal.tuple.Pair;
 
 import com.ctrip.hermes.broker.queue.storage.MessageQueueStorage.FetchResult;
+import com.ctrip.hermes.core.bo.Offset;
 import com.ctrip.hermes.core.bo.Tpg;
 import com.ctrip.hermes.core.bo.Tpp;
 import com.ctrip.hermes.core.lease.Lease;
@@ -52,13 +55,16 @@ public abstract class AbstractMessageQueueCursor implements MessageQueueCursor {
 
 	protected AtomicBoolean m_stopped = new AtomicBoolean(false);
 
-	public AbstractMessageQueueCursor(Tpg tpg, Lease lease, MetaService metaService) {
+	protected MessageQueue m_messageQueue;
+
+	public AbstractMessageQueueCursor(Tpg tpg, Lease lease, MetaService metaService, MessageQueue messageQueue) {
 		m_tpg = tpg;
 		m_lease = lease;
 		m_priorityTpp = new Tpp(tpg.getTopic(), tpg.getPartition(), true);
 		m_nonPriorityTpp = new Tpp(tpg.getTopic(), tpg.getPartition(), false);
 		m_metaService = metaService;
 		m_groupIdInt = m_metaService.translateToIntGroupId(m_tpg.getTopic(), m_tpg.getGroupId());
+		m_messageQueue = messageQueue;
 	}
 
 	@Override
@@ -97,11 +103,26 @@ public abstract class AbstractMessageQueueCursor implements MessageQueueCursor {
 
 	protected abstract Object loadLastResendOffset();
 
-	protected abstract FetchResult fetchPriortyMessages(int batchSize);
+	protected abstract FetchResult fetchPriorityMessages(int batchSize);
 
-	protected abstract FetchResult fetchNonPriortyMessages(int batchSize);
+	protected abstract FetchResult fetchNonPriorityMessages(int batchSize);
 
 	protected abstract FetchResult fetchResendMessages(int batchSize);
+
+	@Override
+	@SuppressWarnings("unchecked")
+	public synchronized Pair<Offset, List<TppConsumerMessageBatch>> next(Offset offset, int batchSize) {
+		if (offset != null) {
+			m_priorityOffset = offset.getPriorityOffset();
+			m_nonPriorityOffset = offset.getNonPriorityOffset();
+			m_resendOffset = offset.getResendOffset();
+		}
+
+		List<TppConsumerMessageBatch> batches = next(batchSize);
+		Offset curOff = new Offset((long) m_priorityOffset, (long) m_nonPriorityOffset, (Pair<Date, Long>) m_resendOffset);
+
+		return new Pair<Offset, List<TppConsumerMessageBatch>>(batches == null ? null : curOff, batches);
+	}
 
 	@Override
 	public synchronized List<TppConsumerMessageBatch> next(int batchSize) {
@@ -112,7 +133,7 @@ public abstract class AbstractMessageQueueCursor implements MessageQueueCursor {
 		try {
 			List<TppConsumerMessageBatch> result = new LinkedList<>();
 			int remainingSize = batchSize;
-			FetchResult pFetchResult = fetchPriortyMessages(batchSize);
+			FetchResult pFetchResult = fetchPriorityMessages(batchSize);
 
 			if (pFetchResult != null) {
 				TppConsumerMessageBatch priorityMessageBatch = pFetchResult.getBatch();
@@ -137,7 +158,7 @@ public abstract class AbstractMessageQueueCursor implements MessageQueueCursor {
 			}
 
 			if (remainingSize > 0) {
-				FetchResult npFetchResult = fetchNonPriortyMessages(remainingSize);
+				FetchResult npFetchResult = fetchNonPriorityMessages(remainingSize);
 
 				if (npFetchResult != null) {
 					TppConsumerMessageBatch nonPriorityMessageBatch = npFetchResult.getBatch();
@@ -164,4 +185,5 @@ public abstract class AbstractMessageQueueCursor implements MessageQueueCursor {
 			doStop();
 		}
 	}
+
 }

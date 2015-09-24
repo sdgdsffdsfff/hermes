@@ -49,12 +49,14 @@ public class TopicView {
 
 	private String consumerRetryPolicy;
 
-	private Long averageDelaySeconds;
+	private Long totalDelay;
 
 	private Date latestProduced;
-	
+
+	private long resendPartitionSize;
+
 	private long storagePartitionSize;
-	
+
 	private int storagePartitionCount;
 
 	public TopicView() {
@@ -76,6 +78,9 @@ public class TopicView {
 		this.otherinfo = topic.getOtherInfo();
 		this.createBy = topic.getCreateBy();
 		this.consumerRetryPolicy = topic.getConsumerRetryPolicy();
+		this.storagePartitionCount = topic.getStoragePartitionCount();
+		this.storagePartitionSize = topic.getStoragePartitionSize();
+		this.resendPartitionSize = topic.getResendPartitionSize();
 		this.setEndpointType(topic.getEndpointType());
 		this.setAckTimeoutSeconds(topic.getAckTimeoutSeconds());
 	}
@@ -254,6 +259,7 @@ public class TopicView {
 		topic.setConsumerRetryPolicy(this.consumerRetryPolicy);
 		topic.setStoragePartitionSize(this.storagePartitionSize);
 		topic.setStoragePartitionCount(this.storagePartitionCount);
+		topic.setResendPartitionSize(this.resendPartitionSize);
 		return topic;
 	}
 
@@ -264,15 +270,15 @@ public class TopicView {
 	public void setConsumerRetryPolicy(String consumerRetryPolicy) {
 		this.consumerRetryPolicy = consumerRetryPolicy;
 	}
-
-	public Long getAverageDelaySeconds() {
-		return averageDelaySeconds;
+	
+	public Long getTotalDelay() {
+		return totalDelay;
 	}
 
-	public void setAverageDelaySeconds(Long averageDelaySeconds) {
-		this.averageDelaySeconds = averageDelaySeconds;
+	public void setTotalDelay(Long totalDelay) {
+		this.totalDelay = totalDelay;
 	}
-
+	
 	public Date getLatestProduced() {
 		return latestProduced;
 	}
@@ -295,5 +301,13 @@ public class TopicView {
 
 	public void setStoragePartitionCount(int storagePartitionCount) {
 		this.storagePartitionCount = storagePartitionCount;
+	}
+
+	public long getResendPartitionSize() {
+		return resendPartitionSize;
+	}
+
+	public void setResendPartitionSize(long resendPartitionSize) {
+		this.resendPartitionSize = resendPartitionSize;
 	}
 }

@@ -4,7 +4,7 @@
 	<parent>
 		<artifactId>hermes</artifactId>
 		<groupId>com.ctrip.hermes</groupId>
-		<version>0.4-SNAPSHOT</version>
+		<version>0.5.1</version>
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 	<modelVersion>4.0.0</modelVersion>
@@ -18,6 +18,11 @@
 			<artifactId>jetty-runner</artifactId>
 			<version>8.1.15.v20140411</version>
 			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.eclipse.jetty</groupId>
+			<artifactId>jetty-start</artifactId>
+			<version>8.1.15.v20140411</version>
 		</dependency>
 	</dependencies>
 
@@ -36,7 +41,7 @@
 						</goals>
 						<configuration>
 							<outputDirectory>${project.basedir}/target/jetty</outputDirectory>
-							<includeArtifactIds>jetty-runner</includeArtifactIds>
+							<includeArtifactIds>jetty-runner,jetty-start</includeArtifactIds>
 						</configuration>
 					</execution>
 				</executions>
@@ -69,6 +74,34 @@
 							<appendAssemblyId>false</appendAssemblyId>
 							<descriptors>
 								<descriptor>assembly/broker-assembly.xml</descriptor>
+							</descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>portal</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<finalName>hermes-portal-${project.version}-${package.environment}-${maven.build.timestamp}</finalName>
+							<appendAssemblyId>false</appendAssemblyId>
+							<descriptors>
+								<descriptor>assembly/portal-assembly.xml</descriptor>
+							</descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>rest</id>
+						<phase>package</phase>
+						<goals>
+							<goal>single</goal>
+						</goals>
+						<configuration>
+							<finalName>hermes-rest-${project.version}-${package.environment}-${maven.build.timestamp}</finalName>
+							<appendAssemblyId>false</appendAssemblyId>
+							<descriptors>
+								<descriptor>assembly/rest-assembly.xml</descriptor>
 							</descriptors>
 						</configuration>
 					</execution>

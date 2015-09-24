@@ -14,13 +14,11 @@ import org.slf4j.LoggerFactory;
 import org.unidal.lookup.annotation.Inject;
 import org.unidal.lookup.annotation.Named;
 
-import com.codahale.metrics.Gauge;
-import com.codahale.metrics.MetricRegistry;
 import com.ctrip.hermes.consumer.api.Consumer.ConsumerHolder;
 import com.ctrip.hermes.core.bo.SubscriptionView;
 import com.ctrip.hermes.core.meta.MetaService;
 import com.ctrip.hermes.core.utils.HermesThreadFactory;
-import com.ctrip.hermes.metrics.HermesMetricsRegistry;
+import com.ctrip.hermes.rest.status.SubscriptionPushStatusMonitor;
 import com.google.common.collect.Sets;
 import com.google.common.collect.Sets.SetView;
 
@@ -34,10 +32,13 @@ public class SubscriptionRegisterService {
 	private Map<SubscriptionView, ConsumerHolder> consumerHolders = new ConcurrentHashMap<>();
 
 	@Inject
-	private SubscriptionPushService pushService;
+	private HttpPushService httpService;
 
 	@Inject
-	private MetaService m_metaService;
+	private SoaPushService soaService;
+
+	@Inject
+	private MetaService metaService;
 
 	private ScheduledExecutorService scheduledExecutor;
 
@@ -45,20 +46,14 @@ public class SubscriptionRegisterService {
 		scheduledExecutor = Executors.newSingleThreadScheduledExecutor(HermesThreadFactory.create("SubscriptionChecker",
 		      true));
 
-		HermesMetricsRegistry.getMetricRegistry().register(
-		      MetricRegistry.name(SubscriptionRegisterService.class, "SubscriptionPusher", "Holders"), new Gauge<Integer>() {
-			      @Override
-			      public Integer getValue() {
-				      return consumerHolders.size();
-			      }
-		      });
+		SubscriptionPushStatusMonitor.INSTANCE.monitorConsumerHolderSize(consumerHolders);
 
 		scheduledExecutor.scheduleWithFixedDelay(new Runnable() {
 
 			@Override
 			public void run() {
 				try {
-					List<SubscriptionView> remoteSubscriptions = m_metaService.listSubscriptions("RUNNING");
+					List<SubscriptionView> remoteSubscriptions = metaService.listSubscriptions("RUNNING");
 					if (logger.isTraceEnabled()) {
 						logger.trace("Received subscriptions: {}", remoteSubscriptions);
 					}
@@ -109,7 +104,14 @@ public class SubscriptionRegisterService {
 		ConsumerHolder consumerHolder = null;
 		boolean isStarted = true;
 		try {
-			consumerHolder = pushService.startPusher(sub);
+			if ("http".equalsIgnoreCase(sub.getType())) {
+				consumerHolder = httpService.startPusher(sub);
+			} else if ("soa".equalsIgnoreCase(sub.getType())) {
+				consumerHolder = soaService.startPusher(sub);
+			} else {
+				// FIXME when portal support SOA
+				consumerHolder = httpService.startPusher(sub);
+			}
 		} catch (Exception e) {
 			logger.warn("Start {} failed, {}", sub, e);
 			isStarted = false;
@@ -148,6 +150,8 @@ public class SubscriptionRegisterService {
 			consumerHolders.remove(sub);
 			logger.info("Stop {} successfully", sub);
 		}
+
+		SubscriptionPushStatusMonitor.INSTANCE.removeMonitor(sub.getTopic(), sub.getGroup());
 
 		return isClosed;
 	}

@@ -95,11 +95,11 @@ public class BaseProducerIntegrationTest extends ComponentTestCase {
 
 	private void configureStubComponents() throws Exception {
 
-		defineComponent(ProducerConfig.class, TestProducerConfig.class);
+		defineComponent(ProducerConfig.class, TestProducerConfig.class)//
+		      .req(ClientEnvironment.class);
 
 		defineComponent(MessageSender.class, Endpoint.BROKER, TestMessageSender.class)//
 		      .req(ProducerConfig.class)//
-		      .req(ClientEnvironment.class)//
 		      .req(SystemClockService.class)//
 		      .req(EndpointManager.class)//
 		      .req(PartitioningStrategy.class)//
@@ -109,10 +109,7 @@ public class BaseProducerIntegrationTest extends ComponentTestCase {
 
 		defineComponent(MetaService.class, TestMetaService.class);
 
-		defineComponent(SendMessageResultMonitor.class, TestSendMessageResultMonitor.class)//
-		      .req(SystemClockService.class)//
-		      .req(ProducerConfig.class)//
-		;
+		defineComponent(SendMessageResultMonitor.class, TestSendMessageResultMonitor.class);
 
 		((TestMessageSender) lookup(MessageSender.class, Endpoint.BROKER)).setEndpointClient(m_endpointClient);
 		((TestMetaService) lookup(MetaService.class)).setMetaHolder(m_metaHolder);
@@ -326,8 +323,8 @@ public class BaseProducerIntegrationTest extends ComponentTestCase {
 
 	public static class TestProducerConfig extends ProducerConfig {
 		@Override
-		public String getDefaultBrokerSenderTaskQueueSize() {
-			return "1";
+		public int getBrokerSenderTaskQueueSize() {
+			return 1;
 		}
 
 		@Override
@@ -336,31 +333,22 @@ public class BaseProducerIntegrationTest extends ComponentTestCase {
 		}
 
 		@Override
-		public long getDefaultBrokerSenderSendTimeoutMillis() {
+		public long getBrokerSenderSendTimeoutMillis() {
 			return 100L;
 		}
 
 		@Override
-		public String getDefaultBrokerSenderNetworkIoCheckIntervalMaxMillis() {
-			return "5";
+		public int getBrokerSenderNetworkIoCheckIntervalMaxMillis() {
+			return 5;
 		}
 
 		@Override
-		public String getDefaultBrokerSenderNetworkIoCheckIntervalBaseMillis() {
-			return "1";
+		public int getBrokerSenderNetworkIoCheckIntervalBaseMillis() {
+			return 1;
 		}
 	}
 
 	public static class TestSendMessageResultMonitor extends DefaultSendMessageResultMonitor {
-		@Override
-		public void initialize() throws InitializationException {
-			// do nothing
-		}
-
-		@Override
-		public void scanAndResendTimeoutCommands() {
-			super.scanAndResendTimeoutCommands();
-		}
 	}
 
 	public static class TestMessageSender extends BrokerMessageSender {

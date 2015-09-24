@@ -13,7 +13,7 @@ import com.ctrip.hermes.meta.entity.Meta;
 import com.ctrip.hermes.metaserver.broker.BrokerAssignmentHolder;
 import com.ctrip.hermes.metaserver.commons.BaseEventBasedZkWatcher;
 import com.ctrip.hermes.metaserver.event.Event;
-import com.ctrip.hermes.metaserver.event.EventEngineContext;
+import com.ctrip.hermes.metaserver.event.EventBus;
 import com.ctrip.hermes.metaserver.event.EventHandler;
 import com.ctrip.hermes.metaserver.event.EventType;
 import com.ctrip.hermes.metaserver.meta.MetaHolder;
@@ -77,11 +77,12 @@ public class FollowerInitEventHandler extends BaseEventHandler implements Initia
 	}
 
 	@Override
-	protected void processEvent(EventEngineContext context, Event event) throws Exception {
+	protected void processEvent(Event event) throws Exception {
 		m_brokerAssignmentHolder.clear();
-		loadAndAddLeaderMetaWatcher(new LeaderMetaChangedWatcher(context));
+		loadAndAddLeaderMetaWatcher(new LeaderMetaChangedWatcher(event.getEventBus(), event.getVersion()));
 
-		loadAndAddMetaServerAssignmentWatcher(new MetaServerAssignmentChangedWatcher(context));
+		loadAndAddMetaServerAssignmentWatcher(new MetaServerAssignmentChangedWatcher(event.getEventBus(),
+		      event.getVersion()));
 	}
 
 	private void loadAndAddMetaServerAssignmentWatcher(MetaServerAssignmentChangedWatcher watcher) throws Exception {
@@ -107,9 +108,8 @@ public class FollowerInitEventHandler extends BaseEventHandler implements Initia
 
 	private class LeaderMetaChangedWatcher extends BaseEventBasedZkWatcher {
 
-		protected LeaderMetaChangedWatcher(EventEngineContext context) {
-			super(context.getEventBus(), context.getWatcherExecutor(), context.getClusterStateHolder(),
-			      org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged);
+		protected LeaderMetaChangedWatcher(EventBus eventBus, long version) {
+			super(eventBus, version, org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged);
 		}
 
 		@Override
@@ -125,9 +125,8 @@ public class FollowerInitEventHandler extends BaseEventHandler implements Initia
 
 	private class MetaServerAssignmentChangedWatcher extends BaseEventBasedZkWatcher {
 
-		protected MetaServerAssignmentChangedWatcher(EventEngineContext context) {
-			super(context.getEventBus(), context.getWatcherExecutor(), context.getClusterStateHolder(),
-			      org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged);
+		protected MetaServerAssignmentChangedWatcher(EventBus eventBus, long version) {
+			super(eventBus, version, org.apache.zookeeper.Watcher.Event.EventType.NodeDataChanged);
 		}
 
 		@Override

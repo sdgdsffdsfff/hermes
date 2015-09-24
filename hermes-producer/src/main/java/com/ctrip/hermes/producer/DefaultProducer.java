@@ -15,6 +15,8 @@ import com.ctrip.hermes.core.pipeline.Pipeline;
 import com.ctrip.hermes.core.result.CompletionCallback;
 import com.ctrip.hermes.core.result.SendResult;
 import com.ctrip.hermes.core.service.SystemClockService;
+import com.ctrip.hermes.core.utils.StringUtils;
+import com.ctrip.hermes.meta.entity.Storage;
 import com.ctrip.hermes.meta.entity.Topic;
 import com.ctrip.hermes.producer.api.Producer;
 import com.ctrip.hermes.producer.build.BuildConstants;
@@ -35,6 +37,9 @@ public class DefaultProducer extends Producer {
 
 	@Override
 	public DefaultMessageHolder message(String topic, String partitionKey, Object body) {
+		if (StringUtils.isBlank(topic)) {
+			throw new IllegalArgumentException("Topic can not be null or empty.");
+		}
 		return new DefaultMessageHolder(topic, partitionKey, body);
 	}
 
@@ -55,6 +60,9 @@ public class DefaultProducer extends Producer {
 				throw new IllegalArgumentException(String.format("Topic %s not found.", m_msg.getTopic()));
 			}
 
+			if (Storage.KAFKA.equals(topic.getStorageType())) {
+				m_msg.setWithCatTrace(false);
+			}
 			m_msg.setBornTime(m_systemClockService.now());
 			return m_pipeline.put(m_msg);
 		}
@@ -94,15 +102,10 @@ public class DefaultProducer extends Producer {
 				return send().get();
 			} catch (ExecutionException e) {
 				throw new MessageSendException(e);
-			} catch(InterruptedException e){
+			} catch (InterruptedException e) {
 				throw new MessageSendException(e);
 			}
 		}
 
-		@Override
-      public MessageHolder withoutHeader() {
-			m_msg.setWithHeader(false);
-			return this;
-		}
 	}
 }

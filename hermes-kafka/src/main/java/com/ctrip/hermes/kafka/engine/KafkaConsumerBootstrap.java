@@ -34,8 +34,10 @@ import com.ctrip.hermes.core.message.BaseConsumerMessage;
 import com.ctrip.hermes.core.message.ConsumerMessage;
 import com.ctrip.hermes.core.message.codec.MessageCodec;
 import com.ctrip.hermes.core.transport.command.CorrelationIdGenerator;
+import com.ctrip.hermes.core.utils.HermesThreadFactory;
 import com.ctrip.hermes.kafka.admin.ZKStringSerializer;
 import com.ctrip.hermes.kafka.message.KafkaConsumerMessage;
+import com.ctrip.hermes.kafka.util.KafkaProperties;
 import com.ctrip.hermes.meta.entity.Datasource;
 import com.ctrip.hermes.meta.entity.Endpoint;
 import com.ctrip.hermes.meta.entity.Partition;
@@ -48,7 +50,8 @@ public class KafkaConsumerBootstrap extends BaseConsumerBootstrap {
 
 	private static final Logger m_logger = LoggerFactory.getLogger(KafkaConsumerBootstrap.class);
 
-	private ExecutorService m_executor = Executors.newCachedThreadPool();
+	private ExecutorService m_executor = Executors.newCachedThreadPool(HermesThreadFactory.create(
+	      "KafkaConsumerExecutor", true));
 
 	@Inject
 	private ClientEnvironment m_environment;
@@ -144,7 +147,7 @@ public class KafkaConsumerBootstrap extends BaseConsumerBootstrap {
 	}
 
 	private Properties getConsumerProperties(String topic, String group) {
-		Properties configs = new Properties();
+		Properties configs = KafkaProperties.getDefaultKafkaConsumerProperties();
 
 		try {
 			Properties envProperties = m_environment.getConsumerConfig(topic);
@@ -174,19 +177,11 @@ public class KafkaConsumerBootstrap extends BaseConsumerBootstrap {
 			}
 		}
 		configs.put("group.id", group);
-		return overrideByCtripDefaultSetting(configs);
-	}
-
-	private Properties overrideByCtripDefaultSetting(Properties consumerProp) {
-		if (!consumerProp.containsKey("offsets.storage")) {
-			consumerProp.put("offsets.storage", "kafka");
-			consumerProp.put("dual.commit.enabled", "true");
-		}
-		return consumerProp;
+		return KafkaProperties.overrideByCtripDefaultConsumerSetting(configs);
 	}
 
 	@SuppressWarnings("unused")
-   private int getKafkaPartitionCount(String topic) {
+	private int getKafkaPartitionCount(String topic) {
 		List<Partition> partitions = m_metaService.listPartitionsByTopic(topic);
 		if (partitions == null || partitions.size() < 1) {
 			return 1;

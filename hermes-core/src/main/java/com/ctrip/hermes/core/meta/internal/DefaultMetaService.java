@@ -3,9 +3,11 @@ package com.ctrip.hermes.core.meta.internal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Pattern;
 
 import org.codehaus.plexus.personality.plexus.lifecycle.phase.Initializable;
 import org.codehaus.plexus.personality.plexus.lifecycle.phase.InitializationException;
@@ -14,7 +16,6 @@ import org.slf4j.LoggerFactory;
 import org.unidal.lookup.annotation.Inject;
 import org.unidal.lookup.annotation.Named;
 
-import com.ctrip.hermes.core.bo.SchemaView;
 import com.ctrip.hermes.core.bo.SubscriptionView;
 import com.ctrip.hermes.core.bo.Tpg;
 import com.ctrip.hermes.core.config.CoreConfig;
@@ -31,6 +32,7 @@ import com.ctrip.hermes.meta.entity.Datasource;
 import com.ctrip.hermes.meta.entity.Endpoint;
 import com.ctrip.hermes.meta.entity.Meta;
 import com.ctrip.hermes.meta.entity.Partition;
+import com.ctrip.hermes.meta.entity.Property;
 import com.ctrip.hermes.meta.entity.Storage;
 import com.ctrip.hermes.meta.entity.Topic;
 import com.ctrip.hermes.meta.transform.BaseVisitor2;
@@ -100,6 +102,7 @@ public class DefaultMetaService implements MetaService, Initializable {
 		return findTopic(topicName, getMeta()).findPartition(partitionId);
 	}
 
+	@Override
 	public List<Topic> listTopicsByPattern(String topicPattern) {
 		if (StringUtils.isBlank(topicPattern)) {
 			throw new RuntimeException("Topic pattern can not be null or blank");
@@ -107,30 +110,56 @@ public class DefaultMetaService implements MetaService, Initializable {
 
 		topicPattern = StringUtils.trim(topicPattern);
 
-		boolean hasWildcard = topicPattern.endsWith("*");
-
-		if (hasWildcard) {
-			topicPattern = topicPattern.substring(0, topicPattern.length() - 1);
-		}
-
 		Meta meta = getMeta();
 		List<Topic> matchedTopics = new ArrayList<Topic>();
 
 		Collection<Topic> topics = meta.getTopics().values();
 
 		for (Topic topic : topics) {
-			if (hasWildcard) {
-				if (StringUtils.startsWithIgnoreCase(topic.getName(), topicPattern)) {
-					matchedTopics.add(topic);
-				}
-			} else {
-				if (StringUtils.equalsIgnoreCase(topic.getName(), topicPattern)) {
-					matchedTopics.add(topic);
-				}
+			if (isTopicMatch(topicPattern, topic.getName())) {
+				matchedTopics.add(topic);
 			}
 		}
 
 		return matchedTopics;
+	}
+
+	boolean isTopicMatch(String topicPattern, String topic) {
+		boolean isMatch = false;
+		if (topic.equalsIgnoreCase(topicPattern)) {
+			isMatch = true;
+		} else {
+			if (topicPattern.indexOf("*") >= 0 || topicPattern.indexOf("#") >= 0) {
+				String pattern = buildMatchPattern(topicPattern);
+				isMatch = Pattern.compile(pattern, Pattern.CASE_INSENSITIVE).matcher(topic).matches();
+			}
+		}
+		return isMatch;
+	}
+
+	private String buildMatchPattern(String topicPattern) {
+		StringBuilder sb = new StringBuilder();
+
+		for (int i = 0; i < topicPattern.length(); i++) {
+			if (i == 0) {
+				sb.append("^");
+			}
+
+			char curChar = topicPattern.charAt(i);
+			if (curChar == '*') {
+				sb.append("\\w+");
+			} else if (curChar == '#') {
+				sb.append("(\\w\\.?)+");
+			} else {
+				sb.append(curChar);
+			}
+
+			if (i == topicPattern.length() - 1) {
+				sb.append("$");
+			}
+		}
+
+		return sb.toString();
 	}
 
 	@Override
@@ -179,7 +208,31 @@ public class DefaultMetaService implements MetaService, Initializable {
 	}
 
 	protected void refreshMeta() {
-		m_metaCache.set(m_manager.loadMeta());
+		int maxTries = 10;
+		RuntimeException exception = null;
+
+		for (int i = 0; i < maxTries; i++) {
+			try {
+				Meta meta = m_manager.loadMeta();
+				if (meta != null) {
+					m_metaCache.set(meta);
+					return;
+				}
+			} catch (RuntimeException e) {
+				exception = e;
+			}
+
+			try {
+				TimeUnit.SECONDS.sleep(1);
+			} catch (InterruptedException e) {
+				// ignore it
+			}
+		}
+
+		if (exception != null) {
+			log.warn("Failed to refresh meta from meta-server for {} times", maxTries);
+			throw exception;
+		}
 	}
 
 	@Override
@@ -240,7 +293,7 @@ public class DefaultMetaService implements MetaService, Initializable {
 	}
 
 	@Override
-	public String findAvroSchemaRegistryUrl() {
+	public String getAvroSchemaRegistryUrl() {
 		Codec avroCodec = getMeta().findCodec(Codec.AVRO);
 		return avroCodec.getProperties().get(m_config.getAvroSchemaRetryUrlKey()).getValue();
 	}
@@ -275,11 +328,6 @@ public class DefaultMetaService implements MetaService, Initializable {
 	}
 
 	@Override
-	public List<SchemaView> listSchemas() {
-		return getMetaProxy().listSchemas();
-	}
-
-	@Override
 	public boolean containsEndpoint(Endpoint endpoint) {
 		return getMeta().getEndpoints().containsKey(endpoint.getId());
 	}
@@ -295,6 +343,40 @@ public class DefaultMetaService implements MetaService, Initializable {
 		}
 
 		return true;
+	}
+
+	@Override
+	public String getZookeeperList() {
+		Map<String, Storage> storages = getMeta().getStorages();
+		for (Storage storage : storages.values()) {
+			if ("kafka".equals(storage.getType())) {
+				for (Datasource ds : storage.getDatasources()) {
+					for (Property property : ds.getProperties().values()) {
+						if ("zookeeper.connect".equals(property.getName())) {
+							return property.getValue();
+						}
+					}
+				}
+			}
+		}
+		return "";
+	}
+
+	@Override
+	public String getKafkaBrokerList() {
+		Map<String, Storage> storages = getMeta().getStorages();
+		for (Storage storage : storages.values()) {
+			if ("kafka".equals(storage.getType())) {
+				for (Datasource ds : storage.getDatasources()) {
+					for (Property property : ds.getProperties().values()) {
+						if ("bootstrap.servers".equals(property.getName())) {
+							return property.getValue();
+						}
+					}
+				}
+			}
+		}
+		return "";
 	}
 
 }

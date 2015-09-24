@@ -122,12 +122,8 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 				if (m_channels.containsKey(endpoint)) {
 					EndpointChannel tmp = m_channels.get(endpoint);
 					if (tmp == endpointChannel) {
-						if (tmp.isClosed()) {
-							m_channels.remove(endpoint);
-						} else if (!tmp.isFlushing() && !tmp.hasUnflushOps()) {
-							m_channels.remove(endpoint);
-							removedChannel = endpointChannel;
-						}
+						m_channels.remove(endpoint);
+						removedChannel = endpointChannel;
 					}
 				}
 			}
@@ -185,7 +181,7 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 		m_writerThreadPool = Executors
 		      .newSingleThreadExecutor(HermesThreadFactory.create("EndpointChannelWriter", false));
 
-		m_eventLoopGroup = new NioEventLoopGroup(1, HermesThreadFactory.create("NettyWriterEventLoop", false));
+		m_eventLoopGroup = new NioEventLoopGroup(0, HermesThreadFactory.create("NettyWriterEventLoop", false));
 
 	}
 
@@ -223,7 +219,9 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 				      new MagicNumberPrepender(), //
 				      new LengthFieldPrepender(4), //
 				      new NettyEncoder(), //
-				      new IdleStateHandler(0, 0, m_config.getEndpointChannelMaxIdleTime()),//
+				      new IdleStateHandler(m_config.getEndpointChannelReadIdleTime(), //
+				            m_config.getEndpointChannelWriteIdleTime(), //
+				            m_config.getEndpointChannelMaxIdleTime()), //
 				      new DefaultClientChannelInboundHandler(m_commandProcessorManager, endpoint, endpointChannel,
 				            DefaultEndpointClient.this, m_config));
 			}
@@ -305,6 +303,8 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 
 		public boolean flush() {
 			if (!isClosed()) {
+				popExpiredOps();
+
 				ChannelFuture channelFuture = m_channelFuture.get();
 
 				if (channelFuture != null) {
@@ -321,6 +321,16 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 				}
 			}
 			return false;
+		}
+
+		private void popExpiredOps() {
+			while (!m_opQueue.isEmpty()) {
+				if (m_opQueue.peek().isExpired()) {
+					m_opQueue.poll();
+				} else {
+					break;
+				}
+			}
 		}
 
 		private void doFlush(Channel channel, final WriteOp op) {
@@ -358,14 +368,16 @@ public class DefaultEndpointClient implements EndpointClient, Initializable {
 		}
 
 		public void write(Command cmd, long timeout, TimeUnit timeUnit) {
-			if (!isClosed() && !m_opQueue.offer(new WriteOp(cmd, timeout, timeUnit))) {
-				ChannelFuture channelFuture = m_channelFuture.get();
-				Channel channel = null;
-				if (channelFuture != null) {
-					channel = channelFuture.channel();
+			if (!isClosed()) {
+				if (!m_opQueue.offer(new WriteOp(cmd, timeout, timeUnit))) {
+					ChannelFuture channelFuture = m_channelFuture.get();
+					Channel channel = null;
+					if (channelFuture != null) {
+						channel = channelFuture.channel();
+					}
+					log.warn("Send buffer of endpoint channel {} is full",
+					      channel == null ? "null" : NettyUtils.parseChannelRemoteAddr(channel));
 				}
-				log.warn("Send buffer of endpoint channel {} is full",
-				      channel == null ? "null" : NettyUtils.parseChannelRemoteAddr(channel));
 			}
 		}
 

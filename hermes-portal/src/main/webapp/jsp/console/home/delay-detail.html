@@ -1,0 +1,14 @@
+<table class="table table-condensed table-striped table-bordered">
+	<thead>
+		<tr>
+			<th>Partition</th>
+			<th>Delay</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr ng-repeat="detail in current_delay_details">
+			<td><span ng-bind="detail.partitionId"></span></td>
+			<td><span ng-bind="detail.delay"></span></td>
+		</tr>
+	</tbody>
+</table>

@@ -1,7 +1,6 @@
 package com.ctrip.hermes.core.transport.command;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
@@ -186,26 +185,6 @@ public class SendMessageCommandTest extends HermesCoreBaseTest {
 		}
 	}
 
-	@Test
-	public void testExpiredNotAccepted() throws Exception {
-		SendMessageCommand cmd = new SendMessageCommand("test", 1);
-		assertFalse(cmd.isExpired(System.currentTimeMillis(), 1000));
-	}
-
-	@Test
-	public void testExpiredAcceptedButNotExpired() throws Exception {
-		SendMessageCommand cmd = new SendMessageCommand("test", 1);
-		cmd.accepted(System.currentTimeMillis());
-		assertFalse(cmd.isExpired(System.currentTimeMillis(), 1000 * 10));
-	}
-
-	@Test
-	public void testExpiredAcceptedAndExpired() throws Exception {
-		SendMessageCommand cmd = new SendMessageCommand("test", 1);
-		cmd.accepted(System.currentTimeMillis() - 2000L);
-		assertTrue(cmd.isExpired(System.currentTimeMillis(), 1000L));
-	}
-
 	@Test(expected = IllegalArgumentException.class)
 	public void testTopicNotMatch() throws Exception {
 		String topic = "topic";
@@ -261,7 +240,7 @@ public class SendMessageCommandTest extends HermesCoreBaseTest {
 		msg.setPartition(partition);
 		msg.setPartitionKey(partitionKey);
 		msg.setPriority(isPriority);
-		msg.setWithHeader(withHeader);
+		msg.setWithCatTrace(withHeader);
 		PropertiesHolder propertiesHolder = new PropertiesHolder();
 		if (appProperites != null && !appProperites.isEmpty()) {
 			for (Pair<String, String> appProperty : appProperites) {
